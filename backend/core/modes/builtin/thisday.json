@@ -1,7 +1,7 @@
 {
   "mode_id": "THISDAY",
   "display_name": "历史上的今天",
-  "icon": "global",
+  "icon": "thisday",
   "cacheable": true,
   "description": "同一天发生过的重大历史事件",
   "content": {

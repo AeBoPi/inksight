@@ -6,7 +6,7 @@ English | [中文](README_ZH.md)
 
 Official website: [https://www.inksight.site](https://www.inksight.site)
 
-![InkSight](images/intro.jpg)
+![InkSight](images/intro_eng.jpg)
 
 ## Why It Stands Out
 
@@ -67,7 +67,7 @@ For a first build, start with **ESP32-C3 + 4.2-inch e-paper**.
 
 ## Explore the Official Website
 
-![Official Website](images/official_web_screenshot.png)
+![Official Website](images/official_web_screenshot_eng.png)
 
 If you want to get a feel for the product before buying parts or setting up anything locally, the official website is the best place to start:
 

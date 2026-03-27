@@ -343,6 +343,7 @@ DEFAULT_LLM_MODEL = "deepseek-v3.2"
 DEFAULT_IMAGE_PROVIDER = "aliyun"
 DEFAULT_IMAGE_MODEL = "qwen-image-max"
 DEFAULT_LANGUAGE = "zh"
+DEFAULT_MODE_LANGUAGE = ""  # empty = follow webapp language setting
 DEFAULT_CONTENT_TONE = "neutral"
 DEFAULT_MODES = ["STOIC"]
 DEFAULT_REFRESH_STRATEGY = "random"

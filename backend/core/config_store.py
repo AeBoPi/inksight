@@ -43,6 +43,7 @@ async def init_db():
                 refresh_strategy TEXT DEFAULT 'random',
                 character_tones TEXT DEFAULT '',
                 language TEXT DEFAULT 'zh',
+                mode_language TEXT DEFAULT '',
                 content_tone TEXT DEFAULT 'neutral',
                 city TEXT DEFAULT '杭州',
                 latitude REAL,
@@ -85,6 +86,7 @@ async def init_db():
                         refresh_strategy TEXT DEFAULT 'random',
                         character_tones TEXT DEFAULT '',
                         language TEXT DEFAULT 'zh',
+                        mode_language TEXT DEFAULT '',
                         content_tone TEXT DEFAULT 'neutral',
                         city TEXT DEFAULT '杭州',
                         latitude REAL,
@@ -142,6 +144,7 @@ async def init_db():
             "time_slot_rules": "TEXT DEFAULT '[]'",
             "memo_text": "TEXT DEFAULT ''",
             "mode_overrides": "TEXT DEFAULT '{}'",
+            "mode_language": "TEXT DEFAULT ''",
             "focus_listening": "INTEGER DEFAULT 0",
             "latitude": "REAL",
             "longitude": "REAL",
@@ -1392,10 +1395,10 @@ async def save_config(mac: str, data: dict) -> int:
     cursor = await db.execute(
         """INSERT INTO configs
            (mac, nickname, modes, refresh_strategy, character_tones,
-            language, content_tone, city, latitude, longitude, timezone, admin1, country,
+            language, mode_language, content_tone, city, latitude, longitude, timezone, admin1, country,
             refresh_interval, llm_provider, llm_model, image_provider, image_model,
             countdown_events, time_slot_rules, memo_text, mode_overrides, focus_listening, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (
             mac,
             data.get("nickname", ""),
@@ -1403,6 +1406,7 @@ async def save_config(mac: str, data: dict) -> int:
             refresh_strategy,
             ",".join(data.get("characterTones", [])),
             data.get("language", DEFAULT_LANGUAGE),
+            data.get("modeLanguage", ""),
             data.get("contentTone", DEFAULT_CONTENT_TONE),
             data.get("city", DEFAULT_CITY),
             data.get("latitude"),
@@ -1478,9 +1482,9 @@ async def update_focus_listening(mac: str, enabled: bool) -> bool:
             await db.execute(
                 """INSERT INTO configs
                    (mac, nickname, modes, refresh_strategy, character_tones,
-                    language, content_tone, city, refresh_interval, llm_provider, llm_model, image_provider, image_model,
+                    language, mode_language, content_tone, city, refresh_interval, llm_provider, llm_model, image_provider, image_model,
                     countdown_events, time_slot_rules, memo_text, mode_overrides, focus_listening, is_active, created_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)""",
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)""",
                 (
                     normalized_mac,
                     prev.get("nickname", "") or "",
@@ -1488,6 +1492,7 @@ async def update_focus_listening(mac: str, enabled: bool) -> bool:
                     prev.get("refresh_strategy", DEFAULT_REFRESH_STRATEGY),
                     tones_str,
                     prev.get("language", DEFAULT_LANGUAGE),
+                    prev.get("mode_language", ""),
                     prev.get("content_tone", DEFAULT_CONTENT_TONE),
                     prev.get("city", DEFAULT_CITY),
                     int(prev.get("refresh_interval", DEFAULT_REFRESH_INTERVAL) or DEFAULT_REFRESH_INTERVAL),
@@ -1568,6 +1573,8 @@ def _row_to_dict(row, columns) -> dict:
     d["refreshStrategy"] = d.get("refresh_strategy", DEFAULT_REFRESH_STRATEGY)
     d["refreshInterval"] = d.get("refresh_interval", DEFAULT_REFRESH_INTERVAL)
     d["contentTone"] = d.get("content_tone", DEFAULT_CONTENT_TONE)
+    d["mode_language"] = d.get("mode_language", "")
+    d["modeLanguage"] = d["mode_language"]
     d["characterTones"] = d.get("character_tones", [])
     d["llmProvider"] = d.get("llm_provider", DEFAULT_LLM_PROVIDER)
     d["llmModel"] = d.get("llm_model", DEFAULT_LLM_MODEL)

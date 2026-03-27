@@ -11,8 +11,9 @@ export function RefreshStrategyEditor({
   locale,
   location,
   setLocation,
-  language,
-  setLanguage,
+  modeLanguage,
+  setModeLanguage,
+  modeLanguageOptions,
   contentTone,
   setContentTone,
   characterTones,
@@ -24,7 +25,6 @@ export function RefreshStrategyEditor({
   setStrategy,
   refreshMin,
   setRefreshMin,
-  languageOptions,
   toneOptions,
   personaPresets,
   strategies,
@@ -33,8 +33,9 @@ export function RefreshStrategyEditor({
   locale: "zh" | "en";
   location: LocationValue;
   setLocation: (value: LocationValue) => void;
-  language: string;
-  setLanguage: (value: string) => void;
+  modeLanguage: string;
+  setModeLanguage: (value: string) => void;
+  modeLanguageOptions: readonly { value: string; label: string; labelEn: string }[];
   contentTone: string;
   setContentTone: (value: string) => void;
   characterTones: string[];
@@ -46,7 +47,6 @@ export function RefreshStrategyEditor({
   setStrategy: (value: string) => void;
   refreshMin: number;
   setRefreshMin: (value: number) => void;
-  languageOptions: readonly { value: string; label: string }[];
   toneOptions: readonly { value: string; label: string }[];
   personaPresets: readonly string[];
   strategies: Record<string, string>;
@@ -75,13 +75,13 @@ export function RefreshStrategyEditor({
         </Field>
         <Field label={tr("语言", "Language")}>
           <div className="flex flex-wrap gap-2">
-            {languageOptions.map((opt) => (
+            {modeLanguageOptions.map((opt) => (
               <Chip
                 key={opt.value}
-                selected={language === opt.value}
-                onClick={() => setLanguage(opt.value)}
+                selected={modeLanguage === opt.value}
+                onClick={() => setModeLanguage(opt.value)}
               >
-                {opt.label}
+                {locale === "en" ? opt.labelEn : opt.label}
               </Chip>
             ))}
           </div>

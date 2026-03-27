@@ -6,6 +6,8 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { normalizeLocale, t } from "@/lib/i18n";
 
+import Image from "next/image";
+
 type DocConfig = {
   title: string;
   file?: string;
@@ -22,7 +24,7 @@ const DOCS: Record<string, DocConfig> = {
   "api-key": { title: "Configure API Key", file: "api-key.md" },
   config: { title: "Web Configuration", file: "config.md" },
   deploy: { title: "Local Deployment", file: "deploy.md" },
-  "plugin-dev": { title: "Plugin Development", file: "plugin-dev.md" },
+  "custom-mode-dev": { title: "Custom Mode Development", file: "custom-mode-dev.md" },
   "api-reference": { title: "API Reference", file: "api.md" },
   faq: { title: "FAQ", file: "faq.md" },
 };
@@ -64,7 +66,25 @@ export default async function DocSlugPage({
 
   return (
     <article className="docs-prose">
-      <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
+      <ReactMarkdown 
+        remarkPlugins={[remarkGfm]}
+        components={{
+          h1: ({node, ...props}) => (
+            <div className="flex items-center justify-between gap-4 mb-8">
+              <h1 className="!mb-0">{props.children}</h1>
+              <div className="flex-shrink-0">
+                <img 
+                  src={locale === "en" ? "/images/QQ_EN.jpg" : "/images/QQ.jpg"} 
+                  alt="QQ Group" 
+                  className="h-24 w-auto object-contain rounded-md border border-ink/10 shadow-sm"
+                />
+              </div>
+            </div>
+          )
+        }}
+      >
+        {content}
+      </ReactMarkdown>
     </article>
   );
 }

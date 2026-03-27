@@ -529,7 +529,7 @@ async def get_habit_status(mac: str) -> list[dict]:
             "name": name,
             "week_count": count,
             "today": today_done,
-            "status": "✓" if today_done else "○",
+            "status": "●" if today_done else "○",
         })
     return results
 

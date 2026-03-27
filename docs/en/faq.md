@@ -7,13 +7,13 @@ If you are already using InkSight and something feels off, missing, or inconsist
 The recommended doc entry points are:
 
 - `README.md`
-- `docs/en/hardware.md`
-- `docs/en/assembly.md`
-- `docs/en/flash.md`
-- `docs/en/config.md`
-- `docs/en/deploy.md`
-- `docs/en/api-key.md`
-- `docs/en/faq.md`
+- `docs/hardware.md`
+- `docs/assembly.md`
+- `docs/flash.md`
+- `docs/config.md`
+- `docs/deploy.md`
+- `docs/api-key.md`
+- `docs/faq.md`
 
 ## 2. Why can’t I find AI model settings in the config tabs?
 

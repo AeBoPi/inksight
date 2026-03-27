@@ -1,7 +1,7 @@
 {
   "mode_id": "HABIT",
   "display_name": "习惯打卡",
-  "icon": "check",
+  "icon": "habit",
   "cacheable": false,
   "description": "追踪每日习惯完成情况",
   "content": {

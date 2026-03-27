@@ -189,7 +189,12 @@ void startCaptivePortal() {
         String pass = sanitizeTextInput(webServer.arg("pass"), PORTAL_MAX_PASS);
         String serverUrl = sanitizeInput(webServer.arg("server"), PORTAL_MAX_URL);
 
+        Serial.printf("\n--- /save_wifi Request ---\n");
+        Serial.printf("SSID: %s\n", ssid.c_str());
+        Serial.printf("Server: %s\n", serverUrl.c_str());
+
         if (ssid.length() == 0) {
+            Serial.println("Error: SSID empty");
             webServer.send(200, "application/json", "{\"ok\":false,\"msg\":\"SSID empty\"}");
             return;
         }
@@ -218,7 +223,9 @@ void startCaptivePortal() {
         unsigned long t0 = millis();
         while (WiFi.status() != WL_CONNECTED && millis() - t0 < (unsigned long)WIFI_TIMEOUT) {
             delay(300);
+            Serial.print(".");
         }
+        Serial.println();
 
         wifiConnecting = false;
 
@@ -231,6 +238,7 @@ void startCaptivePortal() {
             savePendingPairCode(pairCode);
             Serial.printf("[PAIR] local pair code: %s\n", pairCode.c_str());
             String response = String("{\"ok\":true,\"pair_code\":\"") + pairCode + "\"}";
+            Serial.printf("Sending response: %s\n", response.c_str());
             webServer.send(200, "application/json", response);
 
             pendingRestart  = true;
@@ -238,6 +246,7 @@ void startCaptivePortal() {
             Serial.println("Restart scheduled in 15s (or earlier via /restart)");
         } else {
             uint8_t reason = WiFi.status();
+            Serial.printf("WiFi connection failed, status code: %d\n", reason);
             if (reason == WL_NO_SSID_AVAIL) {
                 lastWifiError = "NO_SSID";
             } else if (reason == WL_CONNECT_FAILED) {
@@ -251,6 +260,8 @@ void startCaptivePortal() {
             if (lastWifiError == "NO_SSID")    msg = "找不到该网络";
             else if (lastWifiError == "AUTH_FAIL") msg = "密码错误";
             else                                   msg = "连接超时，请重试";
+            
+            Serial.printf("Sending error response: %s\n", msg.c_str());
             webServer.send(200, "application/json",
                            "{\"ok\":false,\"msg\":\"" + msg + "\"}");
         }
@@ -285,6 +296,7 @@ void startCaptivePortal() {
 
     // ── Route: Manual restart ───────────────────────────────
     webServer.on("/restart", HTTP_POST, []() {
+        Serial.println("\n--- /restart Request Received ---");
         webServer.send(200, "application/json", "{\"ok\":true}");
         Serial.println("Manual restart requested, restarting in 1 second...");
         delay(1000);
@@ -292,6 +304,7 @@ void startCaptivePortal() {
     });
 
     webServer.on("/reset_portal", HTTP_POST, []() {
+        Serial.println("\n--- /reset_portal Request Received ---");
         resetPortalProvisioningState();
         webServer.send(200, "application/json", "{\"ok\":true}");
         Serial.println("Portal reset requested, staying in provisioning mode");

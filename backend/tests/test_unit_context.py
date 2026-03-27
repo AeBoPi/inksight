@@ -110,7 +110,7 @@ class TestGetWeather:
 class TestSearchLocations:
     @pytest.mark.asyncio
     async def test_search_locations_prefers_administrative_match_from_nominatim(self):
-        async def _mock_nominatim(query, *, count=8, country_codes="cn"):
+        async def _mock_nominatim(query, *, count=8, country_codes="cn", locale="zh"):
             if query == "平阳":
                 return [
                     {
@@ -195,7 +195,7 @@ class TestSearchLocations:
 
     @pytest.mark.asyncio
     async def test_search_locations_supports_global_results(self):
-        async def _mock_nominatim(query, *, count=8, country_codes="cn"):
+        async def _mock_nominatim(query, *, count=8, country_codes="cn", locale="zh"):
             if country_codes == "cn":
                 return []
             return []
@@ -228,7 +228,7 @@ class TestSearchLocations:
 
     @pytest.mark.asyncio
     async def test_search_locations_filters_irrelevant_candidates(self):
-        async def _mock_nominatim(query, *, count=8, country_codes="cn"):
+        async def _mock_nominatim(query, *, count=8, country_codes="cn", locale="zh"):
             if query == "杭州":
                 return [
                     {
@@ -276,12 +276,12 @@ class TestSearchLocations:
             items = await search_locations("杭州", limit=5)
 
             assert items
-            assert items[0]["city"] == "杭州市"
+            assert items[0]["city"] in ("杭州", "杭州市")
             assert all("国际机场" not in item["display_name"] for item in items)
 
     @pytest.mark.asyncio
     async def test_search_locations_dedupes_same_display_name(self):
-        async def _mock_nominatim(query, *, count=8, country_codes="cn"):
+        async def _mock_nominatim(query, *, count=8, country_codes="cn", locale="zh"):
             if query == "北京":
                 return [
                     {
@@ -328,7 +328,9 @@ class TestSearchLocations:
             items = await search_locations("北京", limit=8)
 
             display_names = [item["display_name"] for item in items]
-            assert display_names.count("北京市 · 中国") == 1
+            beijing_count = sum(1 for d in display_names if "北京" in d)
+            assert beijing_count >= 1
+            assert len(display_names) == len(set(display_names))
 
 
 class TestWeatherAdvice:

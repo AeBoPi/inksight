@@ -73,7 +73,7 @@ export function LocationPicker({
       return;
     }
 
-    const cachedItems = getCachedLocationResults(keyword);
+    const cachedItems = getCachedLocationResults(keyword, locale);
     if (cachedItems?.length) {
       setOptions(cachedItems);
       setMessage("");
@@ -85,14 +85,14 @@ export function LocationPicker({
       const seq = ++requestSeqRef.current;
       setLoading(true);
       try {
-        const res = await fetch(`/api/locations/search?q=${encodeURIComponent(keyword)}&limit=8`, {
+        const res = await fetch(`/api/locations/search?q=${encodeURIComponent(keyword)}&limit=8&locale=${encodeURIComponent(locale)}`, {
           cache: "no-store",
         });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = (await res.json()) as { items?: LocationOption[] };
         if (seq !== requestSeqRef.current) return;
         const items = Array.isArray(data.items) ? data.items : [];
-        const cached = cacheLocationResults(keyword, items);
+        const cached = cacheLocationResults(keyword, items, locale);
         setOptions(cached);
         setMessage(
           items.length

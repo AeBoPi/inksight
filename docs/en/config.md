@@ -126,8 +126,8 @@ go to **Profile**, not the config tabs.
 
 ## 10. Related docs
 
-- Website guide: [`website.md`](website.md)
-- Flashing: [`flash.md`](flash.md)
-- Hardware: [`hardware.md`](hardware.md)
-- Local deployment: [`deploy.md`](deploy.md)
-- FAQ: [`faq.md`](faq.md)
+- [Website Guide](website)
+- [Web Flasher Guide](flash)
+- [Hardware & Parts Guide](hardware)
+- [Local Deployment Guide](deploy)
+- [FAQ](faq)

@@ -6,7 +6,7 @@ This document reflects the current repository structure and explains the main la
 
 InkSight currently has three major parts:
 
-- **Firmware** — ESP32 firmware for networking, fetching content, driving the e-paper display, and deep sleep behavior
+- **Firmware** — ESP32 firmware for device provisioning, fetching rendered images on a schedule, driving the e-paper display, button interactions, and low-power deep sleep
 - **Backend** — FastAPI service for configuration, weather context, content generation, rendering, caching, and stats
 - **WebApp** — Next.js app for the website, docs, web flasher, login, configuration, and preview
 
@@ -17,7 +17,7 @@ A typical render flow looks like this:
 1. the device requests content from the backend
 2. the backend loads device config and environment context
 3. the backend chooses static data, computed content, external data, or model-generated content depending on the mode
-4. the renderer converts the result into a black-and-white image suitable for e-paper
+4. the renderer converts the result into a bitmap suitable for e-paper (black-and-white, 3-color, or 4-color, depending on device configuration)
 5. the device receives the image and refreshes the screen
 
 The WebApp also uses backend APIs for:
@@ -46,20 +46,20 @@ For `/api/render` and `/api/preview`, the main flow is:
 1. `api/index.py` receives the request
 2. `core/cache.py` checks the render cache
 3. on a miss, `core/pipeline.py:generate_and_render()` runs
-4. `core/mode_registry.py` decides whether the mode is built-in or JSON-defined
-5. `core/renderer.py` or `core/json_renderer.py` produces the final image
+4. `core/mode_registry.py` loads the corresponding JSON mode definition
+5. `core/json_renderer.py` produces the final image
 
 ### Mode system
 
-Built-in modes are now defined in:
+The system uses a pure JSON-driven mode definition. Built-in modes are defined in:
 
-- `backend/core/modes/builtin/`
+- `backend/core/modes/builtin/` (includes multi-language support like the `en/` directory)
 
 Custom JSON modes are loaded from:
 
 - `backend/core/modes/custom/`
 
-The repository currently includes **24 built-in JSON modes**.
+The repository currently includes **27 built-in JSON modes**.
 
 ### Content sources
 
@@ -87,7 +87,7 @@ Cache lifetime is derived from refresh interval and mode count so repeated rende
 
 ## 4. WebApp architecture
 
-The primary frontend lives in:
+The frontend application lives in:
 
 - `webapp/`
 
@@ -101,12 +101,10 @@ Its responsibilities include:
 - profile management
 - preview flows
 
-In the current product structure:
+In the current product structure, the configuration flow is clearly divided into two parts:
 
-- Device Configuration manages device behavior and mode-related settings
-- Profile manages models, API keys, quota, and access mode
-
-That separation is important when reading the rest of the docs.
+- **Device Configuration**: manages device display behavior, refresh strategy, and mode selection.
+- **Profile**: manages AI compute resources (including platform free quota and custom LLM API keys).
 
 ## 5. Firmware architecture
 
@@ -124,7 +122,7 @@ Key modules include:
 
 The repository includes multiple board/display profiles, with the default environment set to:
 
-- `epd_42_c3`
+- `epd_42_c3` (for 4.2-inch B/W e-paper and ESP32-C3 Pro mini / Super mini boards)
 
 ## 6. External dependencies
 
@@ -134,7 +132,7 @@ Common external dependencies include:
 - text model providers
 - image model providers
 
-LLM access is wrapped through OpenAI-compatible client flows, while image-capable modes use the configured image provider path.
+Both LLM text generation and image generation are wrapped through OpenAI-compatible client flows, routing to the corresponding service based on user configuration (preset providers or custom OpenAI format).
 
 ## 7. Why caching matters
 
@@ -152,7 +150,9 @@ The cache and pre-generation strategy reduce:
 
 ## 8. Related docs
 
-- Hardware: [`hardware.md`](hardware.md)
-- Flashing: [`flash.md`](flash.md)
-- Configuration: [`config.md`](config.md)
-- API: [`api.md`](api.md)
+- [Hardware & Parts Guide](hardware)
+- [Assembly Guide](assembly)
+- [Web Flasher Guide](flash)
+- [Device Configuration Guide](config)
+- [API Reference](api)
+- [Local Deployment Guide](deploy)

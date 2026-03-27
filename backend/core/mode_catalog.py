@@ -26,7 +26,7 @@ BUILTIN_CATALOG: list[CatalogItem] = [
         mode_id="DAILY",
         category="core",
         zh=CatalogText(name="每日", tip="语录、书籍推荐、冷知识的综合日报"),
-        en=CatalogText(name="Everyday", tip="A daily digest: quotes, book picks, and fun facts"),
+        en=CatalogText(name="Daily", tip="A daily digest: quotes, book picks, and fun facts"),
     ),
     CatalogItem(
         mode_id="WEATHER",
@@ -62,7 +62,7 @@ BUILTIN_CATALOG: list[CatalogItem] = [
         mode_id="ARTWALL",
         category="core",
         zh=CatalogText(name="画廊", tip="根据时令生成黑白艺术画"),
-        en=CatalogText(name="Gallery", tip="Seasonal black & white generative art"),
+        en=CatalogText(name="Art Wall", tip="Seasonal black & white generative art"),
     ),
     CatalogItem(
         mode_id="ALMANAC",
@@ -141,7 +141,7 @@ BUILTIN_CATALOG: list[CatalogItem] = [
         mode_id="STORY",
         category="more",
         zh=CatalogText(name="微故事", tip="可在 30 秒内读完的微故事"),
-        en=CatalogText(name="Micro Story", tip="A complete micro fiction in three parts"),
+        en=CatalogText(name="Story", tip="A complete micro fiction in three parts"),
     ),
     CatalogItem(
         mode_id="LIFEBAR",
@@ -168,10 +168,22 @@ BUILTIN_CATALOG: list[CatalogItem] = [
         en=CatalogText(name="Custom Quote", tip="Supports custom input or random generation"),
     ),
     CatalogItem(
+        mode_id="CALENDAR",
+        category="more",
+        zh=CatalogText(name="日历", tip="月历视图，显示农历与节日"),
+        en=CatalogText(name="Calendar", tip="Monthly calendar with lunar dates and festivals"),
+    ),
+    CatalogItem(
+        mode_id="TIMETABLE",
+        category="more",
+        zh=CatalogText(name="课程表", tip="按周显示课程安排"),
+        en=CatalogText(name="Timetable", tip="Weekly class schedule display"),
+    ),
+    CatalogItem(
         mode_id="MY_ADAPTIVE",
         category="custom",
-        zh=CatalogText(name="自适应照片", tip="上传本地照片，自适应 4.2\" 墨水屏显示"),
-        en=CatalogText(name="Adaptive Photo", tip="Upload a local photo and auto-fit it to the 4.2\" e-ink screen"),
+        zh=CatalogText(name="相框", tip="上传本地照片，自适应墨水屏显示"),
+        en=CatalogText(name="Photo Frame", tip="Upload a local photo and auto-fit it to the e-ink screen"),
     ),
 ]
 

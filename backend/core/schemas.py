@@ -52,7 +52,8 @@ class ConfigRequest(BaseModel):
     refreshInterval: int = Field(
         default=60, ge=10, le=1440, description="刷新间隔(分钟), 10~1440"
     )
-    language: str = Field(default="zh", description="语言: zh / en / mixed")
+    language: str = Field(default="zh", description="(deprecated) 语言偏好，已被 modeLanguage 取代")
+    modeLanguage: str = Field(default="zh", description="模式内容语言: zh / en")
     contentTone: str = Field(default="neutral", description="调性: positive / neutral / deep / humor")
     city: str = Field(default="杭州", max_length=40, description="城市名称")
     latitude: Optional[float] = Field(default=None, ge=-90, le=90, description="地点纬度")

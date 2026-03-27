@@ -138,7 +138,7 @@
 
 ## 7. 推荐阅读顺序
 
-- 先了解网站怎么用：[`website.md`](website.md)
-- 已拿到硬件：[`hardware.md`](hardware.md) → [`assembly.md`](assembly.md) → [`flash.md`](flash.md)
-- 准备开始配置：[`config.md`](config.md)
-- 准备启用 AI 能力：[`api-key.md`](api-key.md)
+- 先了解网站怎么用：[网站使用指南](website)
+- 已拿到硬件：[硬件指南](hardware) → [组装指南](assembly) → [在线刷机](flash)
+- 准备开始配置：[设备配置](config)
+- 准备启用 AI 能力：[配置 API Key](api-key)

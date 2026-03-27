@@ -148,6 +148,7 @@ def render_json_mode(
     screen_w: int = SCREEN_WIDTH,
     screen_h: int = SCREEN_HEIGHT,
     colors: int = 2,
+    language: str = "zh",
 ) -> Image.Image:
     """Render a JSON-defined mode to an e-ink image (1-bit or 4-color palette)."""
     if colors >= 3:
@@ -175,6 +176,7 @@ def render_json_mode(
         time_str=time_str,
         screen_w=screen_w, screen_h=screen_h,
         colors=colors,
+        language=language,
     )
 
     ft_layout = layout.get("footer", {})
@@ -245,6 +247,8 @@ def render_json_mode(
         _attr_font_size = int(_attr_font_size * scale)
     draw_footer(
         draw, img, label, attribution,
+        mode_id=mode_def.get("mode_id", ""),
+        weather_code=content.get("today_code", content.get("code")),
         line_width=ft.get("line_width", 1),
         dashed=ft.get("dashed", False),
         attr_font_size=_attr_font_size,
@@ -831,11 +835,20 @@ def _render_forecast_cards(ctx: RenderContext, block: dict) -> None:
     n = len(items)
     card_width = max(40, (total_width - gap * (n - 1)) // n)
 
-    # Fonts（增大字体，匹配绿框区域大小）
-    font_day = load_font("noto_serif_regular", int(14 * scale))
-    font_date = load_font("noto_serif_light", int(12 * scale))
-    font_desc = load_font("noto_serif_light", int(12 * scale))
-    font_temp = load_font("noto_serif_light", int(12 * scale))
+    sample_text = " ".join(
+        f"{item.get('day', '')} {item.get('date', '')} {item.get('desc', '')}"
+        for item in items
+    )
+    if has_cjk(sample_text):
+        font_day = load_font("noto_serif_regular", int(14 * scale))
+        font_date = load_font("noto_serif_light", int(12 * scale))
+        font_desc = load_font("noto_serif_light", int(12 * scale))
+        font_temp = load_font("noto_serif_light", int(12 * scale))
+    else:
+        font_day = load_font("lora_regular", int(14 * scale))
+        font_date = load_font("inter_medium", int(12 * scale))
+        font_desc = load_font("lora_regular", int(12 * scale))
+        font_temp = load_font("inter_medium", int(12 * scale))
 
     from .patterns.utils import get_weather_icon
 
@@ -1067,6 +1080,17 @@ def _render_icon_list(ctx: RenderContext, block: dict) -> None:
         ctx.y += line_h
 
 
+def _resolve_local_asset(url: str) -> str | None:
+    """Resolve /webconfig/... URLs to local filesystem paths."""
+    if url.startswith("/webconfig/"):
+        from pathlib import Path
+        project_root = Path(__file__).resolve().parent.parent.parent
+        local = project_root / "webconfig" / url[len("/webconfig/"):]
+        if local.exists() and local.is_file():
+            return str(local)
+    return None
+
+
 def _render_image(ctx: RenderContext, block: dict) -> None:
     field_name = block.get("field", "image_url")
     image_url = str(ctx.get_field(field_name) or "")
@@ -1085,6 +1109,16 @@ def _render_image(ctx: RenderContext, block: dict) -> None:
         ctx.paste_icon(mono, (x, y))
         ctx.y = y + height + int(block.get("margin_bottom", 6))
         return
+    local_path = _resolve_local_asset(image_url)
+    if local_path:
+        try:
+            img = Image.open(local_path).convert("L").resize((width, height))
+            mono = img.convert("1")
+            ctx.paste_icon(mono, (x, y))
+            ctx.y = y + height + int(block.get("margin_bottom", 6))
+            return
+        except (OSError, UnidentifiedImageError):
+            logger.warning("[JSONRenderer] Failed to load local asset %s", local_path, exc_info=True)
     try:
         resp = None
         last_error = None

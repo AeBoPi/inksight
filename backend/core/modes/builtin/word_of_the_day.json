@@ -1,7 +1,7 @@
 {
   "mode_id": "WORD_OF_THE_DAY",
   "display_name": "每日一词",
-  "icon": "book",
+  "icon": "word",
   "cacheable": true,
   "description": "每日精选一个英语单词，展示其拼写与释义",
   "content": {

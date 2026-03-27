@@ -257,15 +257,21 @@ def draw_status_bar(
     screen_w: int = SCREEN_WIDTH,
     screen_h: int = SCREEN_HEIGHT,
     colors: int = 2,
+    language: str = "zh",
 ):
     """绘制顶部状态栏"""
+    is_en = language == "en"
     scale = screen_w / 400.0
-    font_cn = load_font("noto_serif_extralight", int(FONT_SIZES["status_bar"]["cn"] * scale))
+    if is_en:
+        font_date = load_font("lora_regular", int(FONT_SIZES["status_bar"]["cn"] * scale))
+        period_font = load_font("lora_regular", max(9, int(FONT_SIZES["status_bar"]["cn"] * scale)))
+    else:
+        font_date = load_font("noto_serif_extralight", int(FONT_SIZES["status_bar"]["cn"] * scale))
+        period_font_size = max(9, int(FONT_SIZES["status_bar"]["cn"] * scale))
+        period_font = _load_bitmap_font("NotoSerifSC-Regular", period_font_size)
+        if period_font is None:
+            period_font = load_font("noto_serif_regular", period_font_size)
     font_en = load_font("inter_medium", int(FONT_SIZES["status_bar"]["en"] * scale))
-    period_font_size = max(9, int(FONT_SIZES["status_bar"]["cn"] * scale))
-    period_font = _load_bitmap_font("NotoSerifSC-Regular", period_font_size)
-    if period_font is None:
-        period_font = load_font("noto_serif_regular", period_font_size)
 
     match = re.match(r"^\s*(\d{1,2})\s*:", time_str or "")
     hour = datetime.now().hour
@@ -277,24 +283,33 @@ def draw_status_bar(
         except ValueError:
             pass
 
-    if hour >= 23 or hour < 2:
-        period_label = "深夜"
-    elif hour < 5:
-        period_label = "凌晨"
-    elif hour < 8:
-        period_label = "早晨"
-    elif hour < 12:
-        period_label = "上午"
-    elif hour < 14:
-        period_label = "中午"
-    elif hour < 18:
-        period_label = "下午"
-    elif hour < 20:
-        period_label = "傍晚"
+    if is_en:
+        if hour >= 23 or hour < 5:
+            period_label = "Night"
+        elif hour < 12:
+            period_label = "AM"
+        elif hour < 18:
+            period_label = "PM"
+        else:
+            period_label = "Eve"
     else:
-        period_label = "夜晚"
+        if hour >= 23 or hour < 2:
+            period_label = "深夜"
+        elif hour < 5:
+            period_label = "凌晨"
+        elif hour < 8:
+            period_label = "早晨"
+        elif hour < 12:
+            period_label = "上午"
+        elif hour < 14:
+            period_label = "中午"
+        elif hour < 18:
+            period_label = "下午"
+        elif hour < 20:
+            period_label = "傍晚"
+        else:
+            period_label = "夜晚"
 
-    # Tighter padding on small screens
     pad_pct = 0.02 if screen_h < 200 else 0.03
     pad_y = int(screen_h * pad_pct)
     pad_x = int(screen_w * pad_pct)
@@ -303,16 +318,16 @@ def draw_status_bar(
     draw.text((x, y), period_label, fill=EINK_FG, font=period_font)
     bbox_period = draw.textbbox((0, 0), period_label, font=period_font)
     x += (bbox_period[2] - bbox_period[0]) + int(8 * scale)
-    draw.text((x, y), date_str, fill=EINK_FG, font=font_cn)
+    draw.text((x, y), date_str, fill=EINK_FG, font=font_date)
 
     wx = screen_w // 2 - int(28 * scale)
     weather_icon = get_weather_icon(weather_code) if weather_code >= 0 else None
     if weather_icon:
         icon_fill = EINK_COLOR_NAME_MAP.get("red", EINK_FG) if colors >= 3 else EINK_FG
         paste_icon_onto(img, weather_icon, (wx, y - 1), fill=icon_fill)
-        draw.text((wx + int(18 * scale), y), weather_str, fill=EINK_FG, font=font_cn)
+        draw.text((wx + int(18 * scale), y), weather_str, fill=EINK_FG, font=font_date)
     else:
-        draw.text((wx, y), weather_str, fill=EINK_FG, font=font_cn)
+        draw.text((wx, y), weather_str, fill=EINK_FG, font=font_date)
 
     batt_text = f"{battery_pct}%"
     bbox = draw.textbbox((0, 0), batt_text, font=font_en)
@@ -354,6 +369,8 @@ def draw_footer(
     img: Image.Image,
     mode: str,
     attribution: str,
+    mode_id: str = "",
+    weather_code: int | None = None,
     line_width: int = 1,
     dashed: bool = False,
     attr_font: str | None = None,
@@ -387,7 +404,15 @@ def draw_footer(
 
     icon_x = int(12 * scale)
     icon_y = y_line + int(9 * scale)
-    mode_icon = get_mode_icon(mode)
+    icon_key = str(mode_id or mode)
+    mode_icon = None
+    if icon_key.upper() == "WEATHER" and weather_code is not None:
+        try:
+            mode_icon = get_weather_icon(int(weather_code))
+        except (TypeError, ValueError):
+            mode_icon = None
+    if mode_icon is None:
+        mode_icon = get_mode_icon(icon_key)
     if mode_icon:
         icon_fill = EINK_COLOR_NAME_MAP.get("red", EINK_FG) if colors >= 3 else EINK_FG
         paste_icon_onto(img, mode_icon, (icon_x, icon_y), fill=icon_fill)

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Plus, X } from "lucide-react";
 
@@ -10,19 +10,25 @@ interface CalendarRemindersProps {
   tr: (zh: string, en: string) => string;
 }
 
+const MONTH_NAMES_EN = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const DAYS_IN_MONTH = [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+
 export function CalendarReminders({ reminders, onChange, tr }: CalendarRemindersProps) {
-  const [draftDate, setDraftDate] = useState("");
+  const isEn = tr("zh", "en") === "en";
+  const now = useMemo(() => new Date(), []);
+  const [draftMonth, setDraftMonth] = useState(now.getMonth() + 1);
+  const [draftDay, setDraftDay] = useState(now.getDate());
   const [draftText, setDraftText] = useState("");
 
+  const maxDay = DAYS_IN_MONTH[draftMonth - 1] || 31;
+
   const handleAdd = useCallback(() => {
-    if (!draftDate || !draftText.trim()) return;
-    const d = new Date(draftDate);
-    if (isNaN(d.getTime())) return;
-    const key = `${d.getMonth() + 1}-${d.getDate()}`;
+    if (!draftText.trim()) return;
+    const day = Math.min(draftDay, maxDay);
+    const key = `${draftMonth}-${day}`;
     onChange({ ...reminders, [key]: draftText.trim() });
-    setDraftDate("");
     setDraftText("");
-  }, [draftDate, draftText, onChange, reminders]);
+  }, [draftMonth, draftDay, maxDay, draftText, onChange, reminders]);
 
   const handleDelete = useCallback(
     (key: string) => {
@@ -40,8 +46,9 @@ export function CalendarReminders({ reminders, onChange, tr }: CalendarReminders
   });
 
   const formatKey = (key: string) => {
-    const [m, d] = key.split("-");
-    return `${m}${tr("月", "/")}${d}${tr("日", "")}`;
+    const [m, d] = key.split("-").map(Number);
+    if (isEn) return `${MONTH_NAMES_EN[m - 1]} ${d}`;
+    return `${m}月${d}日`;
   };
 
   return (
@@ -65,12 +72,28 @@ export function CalendarReminders({ reminders, onChange, tr }: CalendarReminders
         </div>
       )}
       <div className="flex items-center gap-2">
-        <input
-          type="date"
-          value={draftDate}
-          onChange={(e) => setDraftDate(e.target.value)}
-          className="border border-ink/20 rounded px-2 py-1 text-xs bg-white"
-        />
+        <select
+          value={draftMonth}
+          onChange={(e) => setDraftMonth(Number(e.target.value))}
+          className="border border-ink/20 rounded px-1.5 py-1 text-xs bg-white"
+        >
+          {Array.from({ length: 12 }, (_, i) => (
+            <option key={i + 1} value={i + 1}>
+              {isEn ? MONTH_NAMES_EN[i] : `${i + 1}月`}
+            </option>
+          ))}
+        </select>
+        <select
+          value={Math.min(draftDay, maxDay)}
+          onChange={(e) => setDraftDay(Number(e.target.value))}
+          className="border border-ink/20 rounded px-1.5 py-1 text-xs bg-white"
+        >
+          {Array.from({ length: maxDay }, (_, i) => (
+            <option key={i + 1} value={i + 1}>
+              {isEn ? `${i + 1}` : `${i + 1}日`}
+            </option>
+          ))}
+        </select>
         <input
           type="text"
           value={draftText}
@@ -86,7 +109,7 @@ export function CalendarReminders({ reminders, onChange, tr }: CalendarReminders
           variant="outline"
           size="sm"
           onClick={handleAdd}
-          disabled={!draftDate || !draftText.trim()}
+          disabled={!draftText.trim()}
           className="h-7 px-2 text-xs"
         >
           <Plus className="w-3 h-3 mr-1" />

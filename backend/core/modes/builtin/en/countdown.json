@@ -1,0 +1,137 @@
+{
+  "mode_id": "COUNTDOWN",
+  "display_name": "Countdown",
+  "icon": "flag",
+  "cacheable": false,
+  "description": "Days remaining until your target date",
+  "settings_schema": [
+    { "key": "countdownEvents", "label": "Countdown events" }
+  ],
+  "content": {
+    "type": "computed",
+    "provider": "countdown",
+    "fallback": {
+      "events": [
+        { "name": "New Year", "date": "2027-01-01", "type": "countdown", "days": 100 }
+      ]
+    },
+    "fallback_pool": [
+      {
+        "events": [
+          { "name": "New Year", "date": "2027-01-01", "type": "countdown", "days": 100 }
+        ]
+      },
+      {
+        "events": [
+          { "name": "Summer Vacation", "date": "2026-07-01", "type": "countdown", "days": 90 }
+        ]
+      },
+      {
+        "events": [
+          { "name": "Birthday", "date": "2026-06-15", "type": "countdown", "days": 110 }
+        ]
+      },
+      {
+        "events": [
+          { "name": "Project Deadline", "date": "2026-03-31", "type": "countdown", "days": 34 }
+        ]
+      }
+    ]
+  },
+  "layout": {
+    "status_bar": { "line_width": 1, "dashed": false },
+    "body": [
+      {
+        "type": "list",
+        "field": "events",
+        "max_items": 1,
+        "item_template": "{name}",
+        "font_size": 16,
+        "align": "center"
+      },
+      {
+        "type": "list",
+        "field": "events",
+        "max_items": 1,
+        "item_template": "{date}",
+        "font_size": 11,
+        "align": "center"
+      },
+      { "type": "separator", "style": "short", "width": 70 },
+      {
+        "type": "list",
+        "field": "events",
+        "max_items": 1,
+        "item_template": "{days}",
+        "font": "lora_bold",
+        "font_size": 52,
+        "item_spacing": 58,
+        "align": "center"
+      },
+      { "type": "text", "template": "days to go", "font_name": "Lora-Regular.ttf", "font_size": 13, "align": "center", "max_lines": 1 }
+    ],
+    "footer": {
+      "label": "COUNTDOWN",
+      "attribution_template": "— Remember"
+    }
+  },
+  "layout_overrides": {
+    "296x128": {
+      "body": [
+        {
+          "type": "list",
+          "field": "events",
+          "max_items": 1,
+          "item_template": "{name}",
+          "font_size": 12,
+          "align": "center"
+        },
+        { "type": "separator", "style": "short", "width": 40 },
+        {
+          "type": "list",
+          "field": "events",
+          "max_items": 1,
+          "item_template": "{days}",
+          "font": "lora_bold",
+          "font_size": 36,
+          "item_spacing": 40,
+          "align": "center"
+        },
+        { "type": "text", "template": "days to go", "font_name": "Lora-Regular.ttf", "font_size": 9, "align": "center" }
+      ],
+      "footer": { "label": "COUNTDOWN", "height": 18 }
+    },
+    "800x480": {
+      "body": [
+        {
+          "type": "list",
+          "field": "events",
+          "max_items": 1,
+          "item_template": "{name}",
+          "font_size": 24,
+          "align": "center"
+        },
+        {
+          "type": "list",
+          "field": "events",
+          "max_items": 1,
+          "item_template": "{date}",
+          "font_size": 16,
+          "align": "center"
+        },
+        { "type": "separator", "style": "short", "width": 100 },
+        {
+          "type": "list",
+          "field": "events",
+          "max_items": 1,
+          "item_template": "{days}",
+          "font": "lora_bold",
+          "font_size": 80,
+          "item_spacing": 88,
+          "align": "center"
+        },
+        { "type": "text", "template": "days to go", "font_name": "Lora-Regular.ttf", "font_size": 18, "align": "center", "max_lines": 1 }
+      ]
+    }
+  }
+}

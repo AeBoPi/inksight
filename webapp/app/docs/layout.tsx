@@ -28,7 +28,7 @@ const sidebarSections = [
     titleKey: "docs.section.advanced",
     items: [
       { labelKey: "docs.item.deploy", href: "/docs/deploy" },
-      { labelKey: "docs.item.pluginDev", href: "/docs/plugin-dev" },
+      { labelKey: "docs.item.pluginDev", href: "/docs/custom-mode-dev" },
       { labelKey: "docs.item.apiReference", href: "/docs/api-reference" },
       { labelKey: "docs.item.faq", href: "/docs/faq" },
     ],

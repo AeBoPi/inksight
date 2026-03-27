@@ -19,7 +19,7 @@ interface TimetableEditorProps {
 const WEEKDAYS_ZH = ["一", "二", "三", "四", "五"];
 const WEEKDAYS_EN = ["Mon", "Tue", "Wed", "Thu", "Fri"];
 
-const TEMPLATE_UNIVERSITY: TimetableData = {
+const TEMPLATE_UNIVERSITY_ZH: TimetableData = {
   style: "weekly",
   periods: ["08:00-09:30", "10:00-11:30", "14:00-15:30", "16:00-17:30"],
   courses: {
@@ -31,7 +31,19 @@ const TEMPLATE_UNIVERSITY: TimetableData = {
   },
 };
 
-const TEMPLATE_K12: TimetableData = {
+const TEMPLATE_UNIVERSITY_EN: TimetableData = {
+  style: "weekly",
+  periods: ["08:00-09:30", "10:00-11:30", "14:00-15:30", "16:00-17:30"],
+  courses: {
+    "0-0": "Calculus/A201", "0-2": "Linear Algebra/A201",
+    "1-1": "English/B305", "1-3": "PE/Gym",
+    "2-0": "Data Struct/C102", "2-2": "Networks/C102",
+    "3-1": "Probability/A201", "3-3": "Politics/D405",
+    "4-0": "OS/C102",
+  },
+};
+
+const TEMPLATE_K12_ZH: TimetableData = {
   style: "weekly",
   periods: ["第1节", "第2节", "第3节", "第4节", "第5节", "第6节", "第7节", "第8节"],
   courses: {
@@ -45,6 +57,23 @@ const TEMPLATE_K12: TimetableData = {
     "3-4": "历史", "3-5": "地理", "3-6": "英语", "3-7": "自习",
     "4-0": "化学", "4-1": "英语", "4-2": "生物", "4-3": "历史",
     "4-4": "语文", "4-5": "数学", "4-6": "地理", "4-7": "自习",
+  },
+};
+
+const TEMPLATE_K12_EN: TimetableData = {
+  style: "weekly",
+  periods: ["P1", "P2", "P3", "P4", "P5", "P6", "P7", "P8"],
+  courses: {
+    "0-0": "Chinese", "0-1": "Math", "0-2": "English", "0-3": "Physics",
+    "0-4": "Chemistry", "0-5": "Biology", "0-6": "History", "0-7": "Study",
+    "1-0": "Math", "1-1": "Chinese", "1-2": "Physics", "1-3": "Chemistry",
+    "1-4": "English", "1-5": "Politics", "1-6": "Geography", "1-7": "Study",
+    "2-0": "English", "2-1": "Physics", "2-2": "Math", "2-3": "Chinese",
+    "2-4": "Biology", "2-5": "Chemistry", "2-6": "Politics", "2-7": "Study",
+    "3-0": "Physics", "3-1": "Chemistry", "3-2": "Chinese", "3-3": "Math",
+    "3-4": "History", "3-5": "Geography", "3-6": "English", "3-7": "Study",
+    "4-0": "Chemistry", "4-1": "English", "4-2": "Biology", "4-3": "History",
+    "4-4": "Chinese", "4-5": "Math", "4-6": "Geography", "4-7": "Study",
   },
 };
 
@@ -63,9 +92,14 @@ export function TimetableEditor({ data, onChange, tr }: TimetableEditorProps) {
   const weekdays = isEn ? WEEKDAYS_EN : WEEKDAYS_ZH;
   const templateType = useMemo(() => detectTemplate(data), [data]);
 
+  const getTemplate = useCallback((t: TemplateType) => {
+    if (t === "k12") return isEn ? { ...TEMPLATE_K12_EN } : { ...TEMPLATE_K12_ZH };
+    return isEn ? { ...TEMPLATE_UNIVERSITY_EN } : { ...TEMPLATE_UNIVERSITY_ZH };
+  }, [isEn]);
+
   const switchTemplate = useCallback((t: TemplateType) => {
-    onChange(t === "k12" ? { ...TEMPLATE_K12 } : { ...TEMPLATE_UNIVERSITY });
-  }, [onChange]);
+    onChange(getTemplate(t));
+  }, [onChange, getTemplate]);
 
   const setCourse = useCallback((key: string, value: string) => {
     const next = { ...data.courses };
@@ -85,9 +119,9 @@ export function TimetableEditor({ data, onChange, tr }: TimetableEditorProps) {
 
   const addPeriod = useCallback(() => {
     const n = data.periods.length + 1;
-    const label = templateType === "k12" ? `第${n}节` : `${8 + (n - 1) * 2}:00`;
+    const label = templateType === "k12" ? (isEn ? `P${n}` : `第${n}节`) : `${8 + (n - 1) * 2}:00`;
     onChange({ ...data, periods: [...data.periods, label] });
-  }, [data, onChange, templateType]);
+  }, [data, onChange, templateType, isEn]);
 
   const removePeriod = useCallback(() => {
     if (data.periods.length <= 1) return;
@@ -100,8 +134,8 @@ export function TimetableEditor({ data, onChange, tr }: TimetableEditorProps) {
   }, [data, onChange]);
 
   const resetTemplate = useCallback(() => {
-    onChange(templateType === "k12" ? { ...TEMPLATE_K12 } : { ...TEMPLATE_UNIVERSITY });
-  }, [templateType, onChange]);
+    onChange(getTemplate(templateType));
+  }, [templateType, onChange, getTemplate]);
 
   const commitEdit = useCallback((key: string, value: string) => {
     setCourse(key, value);

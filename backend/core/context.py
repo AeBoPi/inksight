@@ -183,11 +183,17 @@ def _resolve_city(city: str | None) -> tuple[float, float]:
 
 
 @_api_retry
-async def _fetch_geocoding(name: str, *, count: int = 1, country_code: str | None = None) -> dict:
+async def _fetch_geocoding(
+    name: str,
+    *,
+    count: int = 1,
+    country_code: str | None = None,
+    language: str = "zh",
+) -> dict:
     params = {
         "name": name,
         "count": count,
-        "language": "zh",
+        "language": "en" if language == "en" else "zh",
         "format": "json",
     }
     if country_code:
@@ -255,7 +261,9 @@ def _build_location_queries(query: str) -> list[str]:
     return deduped[:4]
 
 
-def _builtin_location_items(query: str, limit: int) -> list[dict]:
+def _builtin_location_items(query: str, limit: int, locale: str = "zh") -> list[dict]:
+    if locale == "en":
+        return []
     normalized_query = _normalize_place_name(query)
     if not normalized_query:
         return []
@@ -333,12 +341,13 @@ async def _fetch_nominatim(
     *,
     count: int = 8,
     country_codes: str | None = _CN_SEARCH_COUNTRY_CODE,
+    locale: str = "zh",
 ) -> list[dict]:
     params = {
         "q": query,
         "format": "jsonv2",
         "addressdetails": 1,
-        "accept-language": "zh-CN",
+        "accept-language": "en-US,en" if locale == "en" else "zh-CN",
         "limit": count,
     }
     if country_codes:
@@ -586,6 +595,7 @@ async def _search_nominatim_locations(
     limit: int,
     *,
     scope: LocationSearchScope = "auto",
+    locale: str = "zh",
 ) -> list[dict]:
     variants = _build_location_queries(query)
     if not variants:
@@ -597,7 +607,12 @@ async def _search_nominatim_locations(
 
     async def _fetch_variant(variant: str, country_codes: str | None) -> list[dict]:
         try:
-            return await _fetch_nominatim(variant, count=count, country_codes=country_codes)
+            return await _fetch_nominatim(
+                variant,
+                count=count,
+                country_codes=country_codes,
+                locale=locale,
+            )
         except (httpx.HTTPError, TypeError, ValueError, JSONDecodeError):
             logger.warning(
                 "[Context] Failed to search Nominatim for query=%s variant=%s",
@@ -663,6 +678,7 @@ async def search_locations(
     query: str,
     limit: int = 8,
     scope: LocationSearchScope = "auto",
+    locale: str = "zh",
 ) -> list[dict]:
     query = _clean_location_text(query, max_length=60)
     if not query:
@@ -671,14 +687,15 @@ async def search_locations(
     if scope not in {"auto", "cn", "global"}:
         scope = "auto"
 
-    cache_key = f"location-search:{query}:{limit}:{scope}"
+    locale = "en" if locale == "en" else "zh"
+    cache_key = f"location-search:{query}:{limit}:{scope}:{locale}"
     cached = _cache_get(cache_key, ttl=3600)
     if isinstance(cached, list):
         return cached
 
-    items = _builtin_location_items(query, limit)
+    items = _builtin_location_items(query, limit, locale=locale)
 
-    items.extend(await _search_nominatim_locations(query, limit, scope=scope))
+    items.extend(await _search_nominatim_locations(query, limit, scope=scope, locale=locale))
 
     geocode_results: list[dict] = []
     should_merge_geocoding = (
@@ -694,7 +711,12 @@ async def search_locations(
         geocode_count = max(limit * 2, 8)
         if scope in {"auto", "cn"}:
             try:
-                data = await _fetch_geocoding(query, count=geocode_count, country_code="CN")
+                data = await _fetch_geocoding(
+                    query,
+                    count=geocode_count,
+                    country_code="CN",
+                    language=locale,
+                )
                 results = data.get("results") if isinstance(data, dict) else None
                 if isinstance(results, list):
                     geocode_results.extend(results)
@@ -703,7 +725,7 @@ async def search_locations(
 
         if not geocode_results and scope in {"auto", "global"}:
             try:
-                data = await _fetch_geocoding(query, count=geocode_count)
+                data = await _fetch_geocoding(query, count=geocode_count, language=locale)
                 results = data.get("results") if isinstance(data, dict) else None
                 if isinstance(results, list):
                     geocode_results.extend(results)
@@ -928,8 +950,19 @@ async def get_weather_cached(city: str | None = None, ttl: float = 1800) -> dict
     return result
 
 
-def _weather_code_to_desc(code: int) -> str:
-    """Convert WMO weather code to Chinese description."""
+def _weather_code_to_desc(code: int, language: str = "zh") -> str:
+    """Convert WMO weather code to localized description."""
+    if language == "en":
+        mapping = {
+            0: "Sunny", 1: "Partly cloudy", 2: "Cloudy", 3: "Overcast",
+            45: "Fog", 48: "Rime fog",
+            51: "Light rain", 53: "Rain", 55: "Heavy rain",
+            61: "Light rain", 63: "Rain", 65: "Heavy rain",
+            71: "Light snow", 73: "Snow", 75: "Heavy snow",
+            80: "Showers", 81: "Showers", 82: "Storm rain",
+            95: "Thunderstorm", 96: "Hail", 99: "Hail",
+        }
+        return mapping.get(code, "Unknown")
     mapping = {
         0: "晴", 1: "多云", 2: "多云", 3: "阴",
         45: "雾", 48: "雾凇",
@@ -968,12 +1001,37 @@ def _generate_weather_advice(
     today_high: str | int | None,
     today_humidity: str | int | None,
     today_wind_level: str,
+    language: str = "zh",
 ) -> str:
     desc = _clean_location_text(today_desc, max_length=32)
     low = _safe_int(today_low)
     high = _safe_int(today_high)
     humidity = _safe_int(today_humidity)
     wind_level_num = _wind_level_number(today_wind_level)
+
+    if language == "en":
+        desc_lower = desc.lower()
+        if "thunder" in desc_lower:
+            return "Thunderstorms possible. Limit outdoor time."
+        if "snow" in desc_lower:
+            return "Snow and cold weather. Keep warm and watch your step."
+        if "rain" in desc_lower or "shower" in desc_lower:
+            return "Rain likely. Bring an umbrella and watch for slippery roads."
+        if "fog" in desc_lower:
+            return "Fog reduces visibility. Travel carefully."
+        if high is not None and high >= 32:
+            return "Hot weather. Stay hydrated and avoid strong sun."
+        if low is not None and low <= 5:
+            return "Cold outside. Dress warmly."
+        if low is not None and high is not None and high - low >= 8:
+            return "Big day-night temperature gap. Bring a light jacket."
+        if wind_level_num is not None and wind_level_num >= 5:
+            return "Windy conditions. Dress to block the wind."
+        if humidity is not None and humidity >= 85:
+            return "Very humid today. Dress light and stay comfortable."
+        if high is not None and high >= 26:
+            return "Warm weather. Light, breathable clothing works best."
+        return "Comfortable weather for a light outfit."
 
     if "雷" in desc:
         return "有雷雨，尽量减少外出"
@@ -999,11 +1057,25 @@ def _generate_weather_advice(
 
 
 async def get_weather_forecast(
-    city: str | None = None, days: int = 3, lat: float | None = None, lon: float | None = None
+    city: str | None = None,
+    days: int = 3,
+    lat: float | None = None,
+    lon: float | None = None,
+    language: str = "zh",
 ) -> dict:
     """Get multi-day weather forecast from Open-Meteo."""
     # city 为空时，既要使用默认经纬度，也要在返回数据里给出一个可展示的城市名
     display_city = city or DEFAULT_CITY
+    if language == "en" and display_city:
+        try:
+            localized = await _fetch_geocoding(display_city, count=1, language="en")
+            results = localized.get("results") if isinstance(localized, dict) else None
+            if isinstance(results, list) and results:
+                parsed = _parse_geocoding_item(results[0])
+                if parsed and parsed.get("city"):
+                    display_city = str(parsed["city"])
+        except (httpx.HTTPError, TypeError, ValueError, JSONDecodeError):
+            logger.warning("[WeatherForecast] Failed to localize city name for %s", display_city, exc_info=True)
     if lat is None or lon is None:
         lat, lon = await _resolve_city_coords(display_city)
     params = {
@@ -1043,7 +1115,11 @@ async def get_weather_forecast(
         sunrises = daily.get("sunrise", [])
         sunsets = daily.get("sunset", [])
 
-        WEEKDAY_SHORT = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"]
+        weekday_short = (
+            ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+            if language == "en"
+            else ["周一", "周二", "周三", "周四", "周五", "周六", "周日"]
+        )
         now = datetime.now()
         today_date = now.date()
         
@@ -1057,22 +1133,22 @@ async def get_weather_forecast(
             # 判断是昨天、今天、明天还是其他
             delta = (date_obj - today_date).days
             if delta == -1:
-                day_label = "昨天"
+                day_label = "Yesterday" if language == "en" else "昨天"
             elif delta == 0:
-                day_label = "今天"
+                day_label = "Today" if language == "en" else "今天"
             elif delta == 1:
-                day_label = "明天"
+                day_label = "Tomorrow" if language == "en" else "明天"
             else:
-                day_label = WEEKDAY_SHORT[d.weekday()]
+                day_label = weekday_short[d.weekday()]
             
             wcode = codes[i] if i < len(codes) else -1
-            desc = _weather_code_to_desc(wcode)
+            desc = _weather_code_to_desc(wcode, language=language)
             
             temp_min = round(t_min[i]) if i < len(t_min) else None
             temp_max = round(t_max[i]) if i < len(t_max) else None
             
             if temp_min is not None and temp_max is not None:
-                temp_range = f"{temp_min}℃ / {temp_max}℃"
+                temp_range = f"{temp_min}° / {temp_max}°" if language == "en" else f"{temp_min}℃ / {temp_max}℃"
             else:
                 temp_range = "--"
             
@@ -1111,7 +1187,11 @@ async def get_weather_forecast(
 
         # 今天的风向和风力（等级粗略按风速估计）
         def _deg_to_wind_dir(deg: float) -> str:
-            dirs = ["北风", "东北风", "东风", "东南风", "南风", "西南风", "西风", "西北风"]
+            dirs = (
+                ["N", "NE", "E", "SE", "S", "SW", "W", "NW"]
+                if language == "en"
+                else ["北风", "东北风", "东风", "东南风", "南风", "西南风", "西风", "西北风"]
+            )
             try:
                 idx = int((deg % 360) / 45 + 0.5) % 8
                 return dirs[idx]
@@ -1131,7 +1211,7 @@ async def get_weather_forecast(
             try:
                 # 这里使用风速近似为等级（粗略）：m/s 四舍五入作为“几级”
                 level = max(1, min(12, int(round(float(wind_speeds[0]) / 2))))  # 简单映射
-                today_wind_level = f"{level}级"
+                today_wind_level = f"Lv {level}" if language == "en" else f"{level}级"
             except (TypeError, ValueError):
                 today_wind_level = ""
 
@@ -1141,6 +1221,7 @@ async def get_weather_forecast(
             today_high=today_high,
             today_humidity=today_humidity,
             today_wind_level=today_wind_level,
+            language=language,
         )
 
         # 日出日落时间（取今天）
@@ -1176,19 +1257,19 @@ async def get_weather_forecast(
             "sunset": sunset_str,
             "advice": advice,
             # 仅返回“未来 4 天”的预报（不含今天）
-            "forecast": full_forecast[1:5] if len(full_forecast) > 1 else [],
+            "forecast": full_forecast[1 : days + 1] if len(full_forecast) > 1 else [],
         }
     except (httpx.HTTPError, KeyError, TypeError, ValueError, JSONDecodeError) as e:
         logger.warning(f"[WeatherForecast] Failed to get weather forecast: {e}", exc_info=True)
         return {
             "city": city or DEFAULT_CITY,
             "today_temp": "--",
-            "today_desc": "暂无数据",
+            "today_desc": "No data" if language == "en" else "暂无数据",
             "today_code": -1,
             "today_low": "--",
             "today_high": "--",
             "today_range": "-- / --",
-            "advice": "注意根据天气添减衣物",
+            "advice": "Dress for the weather." if language == "en" else "注意根据天气添减衣物",
             "forecast": [],
         }
 

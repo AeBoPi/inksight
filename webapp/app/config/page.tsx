@@ -86,10 +86,9 @@ const STRATEGIES: Record<string, string> = {
   smart: "根据时间段自动匹配最佳模式",
 };
 
-const LANGUAGE_OPTIONS = [
-  { value: "zh", label: "中文为主" },
-  { value: "en", label: "英文为主" },
-  { value: "mixed", label: "中英混合" },
+const MODE_LANGUAGE_OPTIONS = [
+  { value: "zh", label: "中文", labelEn: "Chinese" },
+  { value: "en", label: "English", labelEn: "English" },
 ] as const;
 
 const TONE_OPTIONS = [
@@ -129,13 +128,6 @@ export async function queueImmediateRefreshIfOnline(
   } catch {
     return { onlineNow: null, lastSeen: null, refreshQueued: false };
   }
-}
-
-function normalizeLanguage(v: unknown): string {
-  if (typeof v !== "string") return "zh";
-  if (v === "zh" || v === "en" || v === "mixed") return v;
-  const found = LANGUAGE_OPTIONS.find((x) => x.label === v);
-  return found?.value || "zh";
 }
 
 function normalizeTone(v: unknown): string {
@@ -502,7 +494,7 @@ function ConfigPageInner() {
   const [refreshMin, setRefreshMin] = useState(60);
   const [city, setCity] = useState("");
   const [locationMeta, setLocationMeta] = useState<LocationValue>({});
-  const [language, setLanguage] = useState("zh");
+  const [modeLanguage, setModeLanguage] = useState("zh");
   const [contentTone, setContentTone] = useState("neutral");
   const [characterTones, setCharacterTones] = useState<string[]>([]);
   const [customPersonaTone, setCustomPersonaTone] = useState("");
@@ -537,25 +529,33 @@ function ConfigPageInner() {
   const [authorDraft, setAuthorDraft] = useState("");
   const [weatherDraftLocation, setWeatherDraftLocation] = useState<LocationValue>({});
   const [memoDraft, setMemoDraft] = useState("");
-  const [countdownName, setCountdownName] = useState("元旦");
+  const [countdownName, setCountdownName] = useState(isEn ? "New Year" : "元旦");
   const [countdownDate, setCountdownDate] = useState("2027-01-01");
-  const [habitItems, setHabitItems] = useState([
-    { name: "早起", done: false },
-    { name: "运动", done: false },
-    { name: "阅读", done: false },
-  ]);
+  const [habitItems, setHabitItems] = useState(
+    isEn
+      ? [{ name: "Wake up early", done: false }, { name: "Exercise", done: false }, { name: "Read", done: false }]
+      : [{ name: "早起", done: false }, { name: "运动", done: false }, { name: "阅读", done: false }],
+  );
   const [userAge, setUserAge] = useState(30);
   const [lifeExpectancy, setLifeExpectancy] = useState<100 | 120>(100);
   const [timetableData, setTimetableData] = useState<TimetableData>({
     style: "weekly",
     periods: ["08:00-09:30", "10:00-11:30", "14:00-15:30", "16:00-17:30"],
-    courses: {
-      "0-0": "高等数学/A201", "0-2": "线性代数/A201",
-      "1-1": "大学英语/B305", "1-3": "体育/操场",
-      "2-0": "数据结构/C102", "2-2": "计算机网络/C102",
-      "3-1": "概率论/A201", "3-3": "毛概/D405",
-      "4-0": "操作系统/C102",
-    },
+    courses: isEn
+      ? {
+          "0-0": "Calculus/A201", "0-2": "Linear Algebra/A201",
+          "1-1": "English/B305", "1-3": "PE/Gym",
+          "2-0": "Data Struct/C102", "2-2": "Networks/C102",
+          "3-1": "Probability/A201", "3-3": "Politics/D405",
+          "4-0": "OS/C102",
+        }
+      : {
+          "0-0": "高等数学/A201", "0-2": "线性代数/A201",
+          "1-1": "大学英语/B305", "1-3": "体育/操场",
+          "2-0": "数据结构/C102", "2-2": "计算机网络/C102",
+          "3-1": "概率论/A201", "3-3": "毛概/D405",
+          "4-0": "操作系统/C102",
+        },
   });
   // 邀请码弹窗状态
   const [showInviteModal, setShowInviteModal] = useState(false);
@@ -727,7 +727,7 @@ function ConfigPageInner() {
         if (cfg.refreshStrategy || cfg.refresh_strategy) setStrategy((cfg.refreshStrategy || cfg.refresh_strategy) as string);
         if (cfg.refreshInterval || cfg.refresh_minutes) setRefreshMin((cfg.refreshInterval || cfg.refresh_minutes) as number);
         applyGlobalLocation(extractLocationValue(cfg as Record<string, unknown>));
-        if (cfg.language) setLanguage(normalizeLanguage(cfg.language));
+        setModeLanguage((cfg as Record<string, unknown>).modeLanguage as string || (cfg as Record<string, unknown>).mode_language as string || "zh");
         if (cfg.contentTone || cfg.content_tone) setContentTone(normalizeTone(cfg.contentTone || cfg.content_tone));
         if (cfg.characterTones || cfg.character_tones) setCharacterTones((cfg.characterTones || cfg.character_tones) as string[]);
         if (cfg.mode_overrides) setModeOverrides(cfg.mode_overrides);
@@ -832,6 +832,11 @@ function ConfigPageInner() {
       return;
     }
     if (m === "HABIT") {
+      const savedOv = modeOverrides["HABIT"] || {};
+      const savedItems = Array.isArray(savedOv.habitItems) ? (savedOv.habitItems as Array<{ name: string; done?: boolean }>) : null;
+      if (savedItems && savedItems.length > 0) {
+        setHabitItems(savedItems.map((h) => ({ name: h.name, done: h.done ?? false })));
+      }
       setParamModal({ type: "habit", mode: m, action });
       return;
     }
@@ -926,7 +931,7 @@ function ConfigPageInner() {
         refreshStrategy: strategy,
         refreshInterval: refreshMin,
         ...currentLocation,
-        language,
+        modeLanguage,
         contentTone,
         characterTones: characterTones,
         modeOverrides: normalizedModeOverrides,
@@ -963,6 +968,48 @@ function ConfigPageInner() {
       showToast("保存失败", "error");
     } finally {
       setSaving(false);
+    }
+  };
+
+  const [savingPrefs, setSavingPrefs] = useState(false);
+  const handleSavePreferences = async () => {
+    if (!mac) { showToast(tr("请先完成刷机和配网以获取设备 MAC", "Please flash and provision to get device MAC"), "error"); return; }
+    if (macAccessDenied) { showToast(tr("你无权配置该设备", "No permission"), "error"); return; }
+    setSavingPrefs(true);
+    try {
+      const normalizedModeOverrides = Object.fromEntries(
+        Object.entries(modeOverrides)
+          .map(([modeId, ov]) => {
+            const cleaned = sanitizeModeOverride(ov);
+            return [modeId.toUpperCase(), cleaned] as const;
+          })
+          .filter(([, ov]) => Object.keys(ov).length > 0)
+      );
+      const body: Record<string, unknown> = {
+        mac,
+        modes: Array.from(selectedModes),
+        refreshStrategy: strategy,
+        refreshInterval: refreshMin,
+        ...currentLocation,
+        modeLanguage,
+        contentTone,
+        characterTones: characterTones,
+        modeOverrides: normalizedModeOverrides,
+        memoText: memoText,
+        is_focus_listening: isFocusListening,
+      };
+      const res = await fetch("/api/config", {
+        method: "POST",
+        headers: authHeaders({ "Content-Type": "application/json" }),
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) throw new Error("Save failed");
+      showToast(tr("配置已保存", "Settings saved"), "success");
+      setPreviewNoCacheOnce(true);
+    } catch {
+      showToast(tr("保存失败", "Save failed"), "error");
+    } finally {
+      setSavingPrefs(false);
     }
   };
 
@@ -1725,12 +1772,18 @@ function ConfigPageInner() {
       Object.fromEntries(
         catalogItems
           .filter((m) => m.category === "custom")
-          .map((m) => [
-            m.mode_id.toUpperCase(),
-            { name: m.display_name || m.mode_id, tip: m.description || "" },
-          ]),
+          .map((m) => {
+            const lang = isEn ? m.i18n?.en : m.i18n?.zh;
+            return [
+              m.mode_id.toUpperCase(),
+              {
+                name: (lang?.name && String(lang.name)) || m.display_name || m.mode_id,
+                tip: (lang?.tip && String(lang.tip)) || m.description || "",
+              },
+            ];
+          }),
       ),
-    [catalogItems],
+    [catalogItems, isEn],
   );
   const activeModeSchema = settingsMode ? (modeSchemaMap[settingsMode] || []) : [];
 
@@ -2189,29 +2242,40 @@ function ConfigPageInner() {
 
             {/* Preferences Tab */}
             {activeTab === "preferences" && (
-              <RefreshStrategyEditor
-                tr={tr}
-                locale={isEn ? "en" : "zh"}
-                location={currentLocation}
-                setLocation={applyGlobalLocation}
-                language={language}
-                setLanguage={setLanguage}
-                contentTone={contentTone}
-                setContentTone={setContentTone}
-                characterTones={characterTones}
-                setCharacterTones={setCharacterTones}
-                customPersonaTone={customPersonaTone}
-                setCustomPersonaTone={setCustomPersonaTone}
-                handleAddCustomPersona={handleAddCustomPersona}
-                strategy={strategy}
-                setStrategy={setStrategy}
-                refreshMin={refreshMin}
-                setRefreshMin={setRefreshMin}
-                languageOptions={LANGUAGE_OPTIONS}
-                toneOptions={TONE_OPTIONS}
-                personaPresets={PERSONA_PRESETS}
-                strategies={STRATEGIES}
-              />
+              <div className="space-y-4">
+                <RefreshStrategyEditor
+                  tr={tr}
+                  locale={isEn ? "en" : "zh"}
+                  location={currentLocation}
+                  setLocation={applyGlobalLocation}
+                  modeLanguage={modeLanguage}
+                  setModeLanguage={setModeLanguage}
+                  modeLanguageOptions={MODE_LANGUAGE_OPTIONS}
+                  contentTone={contentTone}
+                  setContentTone={setContentTone}
+                  characterTones={characterTones}
+                  setCharacterTones={setCharacterTones}
+                  customPersonaTone={customPersonaTone}
+                  setCustomPersonaTone={setCustomPersonaTone}
+                  handleAddCustomPersona={handleAddCustomPersona}
+                  strategy={strategy}
+                  setStrategy={setStrategy}
+                  refreshMin={refreshMin}
+                  setRefreshMin={setRefreshMin}
+                  toneOptions={TONE_OPTIONS}
+                  personaPresets={PERSONA_PRESETS}
+                  strategies={STRATEGIES}
+                />
+                <Button
+                  variant="outline"
+                  onClick={handleSavePreferences}
+                  disabled={!mac || savingPrefs}
+                  className="w-full bg-white text-ink border-ink/20 hover:bg-ink hover:text-white active:bg-ink active:text-white disabled:bg-white disabled:text-ink/50"
+                >
+                  {savingPrefs ? <Loader2 size={14} className="animate-spin mr-1" /> : <Save size={14} className="mr-1" />}
+                  {tr("保存", "Save")}
+                </Button>
+              </div>
             )}
 
             {/* Sharing Tab */}
@@ -3058,7 +3122,10 @@ function ConfigPageInner() {
               ) : paramModal.type === "habit" ? (
                 <>
                   <div className="text-xs text-ink-light mb-3">
-                    {tr("设置你的习惯并勾选完成情况", "Set your habits and check completion")}
+                    {tr(
+                      "管理你的习惯列表，勾选今日已完成的习惯。用 ✕ 移除不想追踪的习惯。",
+                      "Manage your habit list. Check off completed habits today. Use ✕ to remove habits you don't want to track.",
+                    )}
                   </div>
                   <div className="space-y-2 max-h-64 overflow-y-auto">
                     {habitItems.map((item, idx) => (
@@ -3085,7 +3152,7 @@ function ConfigPageInner() {
                         <button
                           onClick={() => setHabitItems(habitItems.filter((_, i) => i !== idx))}
                           className="text-ink-light hover:text-red-500 px-2"
-                          title={tr("删除", "Delete")}
+                          title={tr("移除此习惯", "Remove this habit")}
                         >
                           ✕
                         </button>
@@ -3108,10 +3175,9 @@ function ConfigPageInner() {
                     </Button>
                     <Button
                       onClick={() => {
-                        const lines = habitItems.map((h) => `${h.name} ${h.done ? "✓" : "✗"}`);
+                        const tracked = habitItems.filter((h) => h.name.trim());
                         commitModalAction(paramModal.mode, paramModal.action, {
-                          habits: habitItems,
-                          summary: lines.join("\n"),
+                          habitItems: tracked.map((h) => ({ name: h.name.trim(), done: h.done })),
                         } as ModeOverride);
                       }}
                       disabled={previewLoading}

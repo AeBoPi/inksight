@@ -1,7 +1,7 @@
 {
   "mode_id": "ALMANAC",
   "display_name": "老黄历",
-  "icon": "book",
+  "icon": "calendar",
   "cacheable": false,
   "description": "农历日期、宜忌、节气、养生提示",
   "content": {

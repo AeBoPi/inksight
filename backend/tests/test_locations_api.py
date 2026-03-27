@@ -35,4 +35,4 @@ async def test_location_search_api_returns_candidates():
     assert data["query"] == "平阳"
     assert data["scope"] == "global"
     assert data["items"][0]["city"] == "平阳县"
-    mock_search.assert_awaited_once_with("平阳", limit=8, scope="global")
+    mock_search.assert_awaited_once_with("平阳", limit=8, scope="global", locale="zh")

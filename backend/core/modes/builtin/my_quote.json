@@ -1,7 +1,7 @@
 {
   "mode_id": "MY_QUOTE",
   "display_name": "自定义语录",
-  "icon": "quote",
+  "icon": "my_quote",
   "cacheable": false,
   "description": "随机生成一条有力量的语录，或使用你输入的语录内容",
 

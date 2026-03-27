@@ -1,7 +1,7 @@
 {
   "mode_id": "MEMO",
   "display_name": "便签留言",
-  "icon": "note",
+  "icon": "memo",
   "cacheable": false,
   "description": "在墨水屏上显示自定义留言",
   "settings_schema": [

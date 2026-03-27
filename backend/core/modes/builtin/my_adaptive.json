@@ -1,8 +1,8 @@
 {
   "mode_id": "MY_ADAPTIVE",
-  "display_name": "自适应照片",
+  "display_name": "相框",
   "description": "上传本地照片，自适应墨水屏显示",
-  "icon": "image",
+  "icon": "my_adaptive",
   "cacheable": false,
   "content": {
     "type": "static",

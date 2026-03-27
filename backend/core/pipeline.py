@@ -7,6 +7,8 @@ from __future__ import annotations
 import logging
 from PIL import Image
 
+from datetime import datetime
+
 from .config import (
     SCREEN_WIDTH,
     SCREEN_HEIGHT,
@@ -17,6 +19,19 @@ from .config import (
     DEFAULT_LANGUAGE,
     DEFAULT_CONTENT_TONE,
 )
+
+WEEKDAY_EN_SHORT = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+MONTH_EN_SHORT = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+
+
+def _format_date_str(date_ctx: dict, language: str) -> str:
+    if language == "en":
+        now = datetime.now()
+        weekday = date_ctx.get("weekday", now.weekday())
+        day = date_ctx.get("day", now.day)
+        month = now.month
+        return f"{MONTH_EN_SHORT[month - 1]} {day} {WEEKDAY_EN_SHORT[weekday]}"
+    return date_ctx["date_str"]
 
 logger = logging.getLogger(__name__)
 
@@ -81,7 +96,6 @@ async def generate_and_render(
     Returns:
         Tuple of (rendered image, content dict).
     """
-    date_str = date_ctx["date_str"]
     time_str = date_ctx.get("time_str", "")
     weather_str = weather["weather_str"]
     weather_code = weather.get("weather_code", -1)
@@ -97,6 +111,10 @@ async def generate_and_render(
         screen_h=screen_h,
     )
 
+    eff_cfg = get_effective_mode_config(config, persona)
+    _eff_lang = eff_cfg.get("mode_language", "") or DEFAULT_LANGUAGE
+    date_str = _format_date_str(date_ctx, _eff_lang)
+
     img = _render_for_persona(
         persona,
         content,
@@ -110,6 +128,7 @@ async def generate_and_render(
         screen_h=screen_h,
         mac=mac or "",
         colors=colors,
+        language=_eff_lang,
     )
     return img, content
 
@@ -149,16 +168,13 @@ async def _generate_content_for_persona(
     from .mode_registry import ContentContext, get_registry
 
     registry = get_registry()
-    date_str = date_ctx["date_str"]
 
-    # 解析 API key 来源（用户级别优先，其次设备配置，最后环境变量）
-    # 使用 None 表示「未提供 key，将在下游从环境变量读取」；
-    # 使用空字符串 "" 表示「用户提供了但无效」，便于上游给出明确提示。
+    effective_language = cfg.get("mode_language", "") or DEFAULT_LANGUAGE
+    date_str = _format_date_str(date_ctx, effective_language)
+
     device_api_key: str | None = None
     device_image_api_key: str | None = None
 
-    # 使用用户级别的 API key 配置（不再从设备配置读取）
-    # 用户级别的配置通过 shared.py 中的 get_user_llm_config 获取并设置到 config["user_api_key"]
     user_api_key = cfg.get("user_api_key")
     if isinstance(user_api_key, str):
         device_api_key = user_api_key
@@ -191,7 +207,7 @@ async def _generate_content_for_persona(
         upcoming_holiday=date_ctx.get("upcoming_holiday", ""),
         days_until_holiday=date_ctx.get("days_until_holiday", 0),
         character_tones=cfg.get("character_tones", []),
-        language=cfg.get("language", DEFAULT_LANGUAGE),
+        language=effective_language,
         content_tone=cfg.get("content_tone", DEFAULT_CONTENT_TONE),
         llm_provider=cfg.get("llm_provider", DEFAULT_LLM_PROVIDER),
         llm_model=cfg.get("llm_model", DEFAULT_LLM_MODEL),
@@ -203,7 +219,7 @@ async def _generate_content_for_persona(
     # JSON-defined mode
     if registry.is_json_mode(persona):
         from .json_content import generate_json_mode_content
-        jm = registry.get_json_mode(persona, mac)
+        jm = registry.get_json_mode(persona, mac, language=effective_language)
         if not jm:
             # Try to load from database if mode not in registry
             # This can happen for user-specific custom modes
@@ -213,13 +229,11 @@ async def _generate_content_for_persona(
                 if owner:
                     user_id = owner.get("user_id")
                     if user_id:
-                        # Load mode from database for the specific device
                         mode_data = await get_user_custom_mode_from_db(user_id, persona, mac)
                         if mode_data:
-                            # Load into registry for this request
                             mode_mac = mode_data.get("mac")
                             registry.load_custom_mode_from_dict(persona, mode_data["definition"], source="custom", mac=mode_mac)
-                            jm = registry.get_json_mode(persona, mac)
+                            jm = registry.get_json_mode(persona, mac, language=effective_language)
         if not jm:
             raise ValueError(f"JSON mode {persona} not found in registry")
         return await generate_json_mode_content(
@@ -233,7 +247,7 @@ async def _generate_content_for_persona(
             upcoming_holiday=date_ctx.get("upcoming_holiday", ""),
             days_until_holiday=date_ctx.get("days_until_holiday", 0),
             character_tones=cfg.get("character_tones", []),
-            language=cfg.get("language", DEFAULT_LANGUAGE),
+            language=effective_language,
             content_tone=cfg.get("content_tone", DEFAULT_CONTENT_TONE),
             llm_provider=cfg.get("llm_provider", DEFAULT_LLM_PROVIDER),
             llm_model=cfg.get("llm_model", DEFAULT_LLM_MODEL),
@@ -269,6 +283,7 @@ def _render_for_persona(
     screen_h: int = SCREEN_HEIGHT,
     mac: str = "",
     colors: int = 2,
+    language: str = "zh",
 ) -> Image.Image:
     """Dispatch rendering to the appropriate handler."""
     from .mode_registry import get_registry
@@ -279,8 +294,7 @@ def _render_for_persona(
 
     # JSON-defined mode
     if registry.is_json_mode(persona):
-        # mac 为空字符串表示 Web 预览等无设备场景，此时只根据 persona 取 JSON 模式
-        jm = registry.get_json_mode(persona, mac or None)
+        jm = registry.get_json_mode(persona, mac or None, language=language)
         # Weather 模式下不在状态栏中间重复显示简略天气（只保留日期、电量等）
         if persona.upper() == "WEATHER":
             weather_str_for_bar = ""
@@ -293,6 +307,7 @@ def _render_for_persona(
             date_str=date_str, weather_str=weather_str_for_bar, battery_pct=battery_pct,
             weather_code=weather_code_for_bar, time_str=time_str,
             screen_w=screen_w, screen_h=screen_h, colors=colors,
+            language=language,
         )
 
     # Builtin Python mode - use original render_mode dispatcher

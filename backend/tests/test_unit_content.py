@@ -71,7 +71,7 @@ class TestBuildStyleInstructions:
 
     def test_language_en(self):
         result = _build_style_instructions(None, "en", None)
-        assert "英文" in result
+        assert result == ""
 
     def test_content_tone_humor(self):
         result = _build_style_instructions(None, None, "humor")

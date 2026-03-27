@@ -8,7 +8,16 @@ export default async function DocsPage() {
   if (locale === "en") {
     return (
       <article className="docs-prose">
-        <h1>Quick Start</h1>
+        <div className="flex items-center justify-between gap-4 mb-8">
+          <h1 className="!mb-0">Quick Start</h1>
+          <div className="flex-shrink-0">
+            <img 
+              src="/images/QQ_EN.jpg" 
+              alt="QQ Group" 
+              className="h-24 w-auto object-contain rounded-md border border-ink/10 shadow-sm"
+            />
+          </div>
+        </div>
         <blockquote>
           InkSight is a calm e-ink desk companion. Start with the recommended hardware, flash the firmware, connect Wi-Fi,
           then configure content from the web app.
@@ -36,22 +45,33 @@ export default async function DocsPage() {
             <p>For a first build, use USB power and the recommended `ESP32-C3 + 4.2-inch e-paper` setup.</p>
           </div>
         </div>
-        <div className="callout callout-important">
-          <div className="callout-icon">
-            <Zap size={16} />
-          </div>
-          <div>
-            <p className="callout-title">Where settings live</p>
-            <p>Use Device Configuration for device behavior, and Profile for model, API key, and quota settings.</p>
-          </div>
+      <div className="callout callout-important">
+        <div className="callout-icon">
+          <Zap size={16} />
         </div>
+        <div>
+          <p className="callout-title">Where settings live</p>
+          <p>
+            In the current version, use <strong>Device Configuration</strong> to manage device display behavior and modes, and <strong>Profile</strong> to manage AI compute resources (including platform free quota and custom LLM API keys).
+          </p>
+        </div>
+      </div>
       </article>
     );
   }
 
   return (
     <article className="docs-prose">
-      <h1>快速开始</h1>
+      <div className="flex items-center justify-between gap-4 mb-8">
+        <h1 className="!mb-0">快速开始</h1>
+        <div className="flex-shrink-0">
+          <img 
+            src="/images/QQ.jpg" 
+            alt="QQ Group" 
+            className="h-24 w-auto object-contain rounded-md border border-ink/10 shadow-sm"
+          />
+        </div>
+      </div>
       <blockquote>
         InkSight 是一块适合放在桌面的电子墨水信息屏。先准备推荐硬件，完成刷机与配网，再通过 WebApp 配置内容即可。
       </blockquote>
@@ -76,7 +96,7 @@ export default async function DocsPage() {
         <div>
           <p className="callout-title">入门建议</p>
           <p>
-            第一次搭建建议直接使用 <strong>ESP32-C3 + 4.2寸 SPI 墨水屏</strong>，并优先使用 USB 供电排障。
+            第一次搭建建议使用 <strong>ESP32-C3 + 4.2寸 SPI 墨水屏模块</strong>，并优先使用 USB 供电排障。
           </p>
         </div>
       </div>
@@ -86,16 +106,16 @@ export default async function DocsPage() {
         </div>
         <div>
           <p className="callout-title">当前产品入口</p>
-          <p>
-            当前代码中，设备配置页负责设备配置，个人信息页负责模型、API Key、额度与访问模式。
-          </p>
+      <p>
+        当前版本中，<strong>设备配置页</strong>用于管理设备的展示行为与模式，<strong>个人信息页</strong>则用于管理 AI 算力（包括平台免费额度和自定义大模型 API Key）。
+      </p>
         </div>
       </div>
       <hr />
       <p>
         如果你要本地开发、自托管部署、联调预览或刷机流程，请直接查看{" "}
         <Link href={withLocalePath(locale, "/docs/deploy")}>本地部署</Link>{" "}
-        文档，而不是在首页文档里查命令细节。
+        文档。
       </p>
     </article>
   );

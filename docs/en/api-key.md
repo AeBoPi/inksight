@@ -103,7 +103,7 @@ If both text and image generation work, your setup is in good shape.
 
 ## 7. Related docs
 
-- Web configuration: [`config.md`](config.md)
-- Website guide: [`website.md`](website.md)
-- Local deployment: [`deploy.md`](deploy.md)
-- FAQ: [`faq.md`](faq.md)
+- [Device Configuration Guide](config)
+- [Website Guide](website)
+- [Local Deployment Guide](deploy)
+- [FAQ](faq)

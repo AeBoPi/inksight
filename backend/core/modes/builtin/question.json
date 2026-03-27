@@ -1,7 +1,7 @@
 {
   "mode_id": "QUESTION",
   "display_name": "每日一问",
-  "icon": "tips",
+  "icon": "question",
   "cacheable": true,
   "description": "一个值得思考的开放式问题",
   "content": {

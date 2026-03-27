@@ -139,7 +139,7 @@ The default environment is:
 For other supported hardware profiles, see:
 
 - `firmware/platformio.ini`
-- `docs/en/hardware.md`
+- `docs/hardware.md`
 
 ## 9. Useful verification commands
 

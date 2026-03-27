@@ -12,9 +12,10 @@ async def location_search(
     q: str = Query(..., min_length=1, max_length=60, description="地点关键词"),
     limit: int = Query(default=8, ge=1, le=10, description="最多返回数量"),
     scope: LocationSearchScope = Query(default="auto", description="搜索范围：auto/cn/global"),
+    locale: str = Query(default="zh", description="结果语言：zh/en"),
 ):
     query = q.strip()
     if not query:
         return {"query": "", "items": []}
-    items = await search_locations(query, limit=limit, scope=scope)
-    return {"query": query, "scope": scope, "items": items}
+    items = await search_locations(query, limit=limit, scope=scope, locale=locale)
+    return {"query": query, "scope": scope, "locale": locale, "items": items}

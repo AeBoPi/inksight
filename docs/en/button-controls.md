@@ -1,46 +1,44 @@
 # Button Controls
 
-The current firmware uses a single config button for two jobs: switching runtime behavior and re-entering the setup flow.
+On the recommended ESP32-C3 development boards (like the SuperMini), there are typically two physical buttons: **RST (Reset)** and **BOOT (Config)**.
 
-## 1. Supported button actions
+The InkSight firmware uses these two buttons to handle device reboots, mode switching, and Wi-Fi provisioning.
 
-### Single press
+## 1. RST Button (Hardware Reset)
 
-- A short press toggles between **Live mode** and the normal **interval refresh mode**.
-- In firmware, a short press means **at least 50ms and less than 2 seconds**.
+- **Function**: Physically cuts and restores power to the chip, executing a hard reboot.
+- **Usage**: A single short press at any time will immediately reboot the device.
+- **Note**: This is a hardware-level reset that does not save the current state. It is typically used when the device is completely frozen or requires a forced restart.
 
-### Long press
+## 2. BOOT Button (Config Button)
 
-- Hold the button for about **2 seconds** and the device shows `Restarting`, then reboots.
-- To enter Wi-Fi/setup mode, keep holding the button briefly during reboot so the device boots into the captive portal.
+In the InkSight firmware, the BOOT button is defined as the primary interaction button (mapped to `BUTTON_PIN` in code, usually GPIO9).
 
-## 2. What the two runtime modes mean
+### Short Press (Single Click)
 
-### Interval refresh mode
+- **Action**: Press for at least 50ms and less than 2 seconds.
+- **Function**: Toggles between **Live (active state)** and **Interval (sleep state)**.
+  - **Interval (sleep state)**: The device refreshes based on the schedule configured in the web app, then enters deep sleep. This is the lowest-power mode, ideal for everyday desk use.
+  - **Live (active state)**: The device stays online (no deep sleep) and polls the backend frequently for updates. Useful for debugging or when you want to see configuration changes immediately, but consumes significantly more power.
 
-- The device refreshes on the schedule configured in the web app.
-- This is the lower-power mode and is the right default for everyday desk use.
+### Long Press (Soft Reboot)
 
-### Live mode
+- **Action**: Hold the button for about **2 seconds**.
+- **Function**: The screen will display `Restarting`, followed by a graceful soft reboot.
 
-- The device stays online and polls more frequently for pending updates.
-- It is useful while tuning layouts, testing modes, or checking changes quickly.
-- Power usage is noticeably higher than interval refresh mode.
+### Hold During Boot (Force Captive Portal)
 
-## 3. Forcing the setup portal at boot
+- **Action**: **Hold the BOOT button down** exactly when the device powers on (or immediately after pressing the RST button).
+- **Function**: The device skips the normal connection flow and forces entry into the **Captive Portal (Setup Mode)**.
+- **Use Cases**:
+  - Changing to a new Wi-Fi network.
+  - Updating the backend server URL.
+  - Rescuing a device that cannot connect to its saved network.
+- **Note**: If the device is freshly flashed and has no saved Wi-Fi credentials, it will enter the captive portal automatically on boot without needing to hold the button.
 
-- If the device has no Wi-Fi config yet, it enters the captive portal automatically.
-- If Wi-Fi is already configured, you can still hold the config button during boot to force the captive portal.
-- This is the recovery path for changing Wi-Fi, updating the backend URL, or fixing a device that cannot reconnect normally.
+## 3. Source of truth
 
-## 4. What is not implemented right now
-
-- The current firmware **does not define a dedicated double-click action**.
-- It also **does not use short press to jump to the next content mode**; short press only toggles Live / interval behavior.
-
-## 5. Source of truth
-
-- Force-portal check during boot: `firmware/src/main.cpp:124`
-- Short-press / long-press handler: `firmware/src/main.cpp:497`
-- Long-press and debounce thresholds: `firmware/src/config.h:61`
-- Recommended board button pin definitions: `firmware/src/config.h:14`
+- Force-portal check during boot: `firmware/src/main.cpp`
+- Short-press / long-press handler: `firmware/src/main.cpp`
+- Long-press and debounce thresholds: `firmware/src/config.h`
+- Recommended board button pin definitions: `firmware/src/config.h`

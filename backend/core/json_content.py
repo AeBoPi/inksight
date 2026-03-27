@@ -254,6 +254,7 @@ async def generate_json_mode_content(
     context = _build_context_str(
         date_str, weather_str, festival, daily_word,
         upcoming_holiday, days_until_holiday,
+        language=language,
     )
     base_prompt = content_cfg.get("prompt_template", "").replace("{context}", context)
 
@@ -261,9 +262,11 @@ async def generate_json_mode_content(
     if style:
         base_prompt += style
 
-    # Hint for small screens: ask LLM to keep content shorter
     if screen_h < 200:
-        base_prompt += "\n注意：内容将显示在极小屏幕上（296×128像素），所有文字请尽量简短。"
+        if language == "en":
+            base_prompt += "\nNote: Content will be displayed on a tiny screen (296×128px). Keep all text very short."
+        else:
+            base_prompt += "\n注意：内容将显示在极小屏幕上（296×128像素），所有文字请尽量简短。"
 
     mode_id = mode_def.get("mode_id", "CUSTOM")
     logger.info(f"[JSONContent] Generating content for {mode_id} via {provider}/{model}")
@@ -277,7 +280,10 @@ async def generate_json_mode_content(
             recent_hashes = await get_recent_content_hashes(mac, mode_id, limit=20)
             summaries = await get_recent_content_summaries(mac, mode_id, limit=3)
             if summaries:
-                dedup_hint = "\n请避免与以下近期内容重复：" + "；".join(summaries)
+                if language == "en":
+                    dedup_hint = "\nAvoid repeating these recent topics: " + "; ".join(summaries)
+                else:
+                    dedup_hint = "\n请避免与以下近期内容重复：" + "；".join(summaries)
         except (OSError, TypeError, ValueError):
             logger.warning("[JSONContent] Failed to load dedup context for %s:%s", mac, mode_id, exc_info=True)
 
@@ -381,16 +387,34 @@ async def _generate_computed_content(mode_def: dict, content_cfg: dict, fallback
                 cfg["countdownEvents"] = events
         return await generate_countdown_content(config=cfg)
     if provider == "daily_meta":
+        from datetime import datetime as _dt
         date_ctx = kwargs.get("date_ctx", {}) or {}
+        lang = kwargs.get("language", "zh")
         result = dict(fallback)
-        result.update({
-            "year": date_ctx.get("year"),
-            "day": date_ctx.get("day"),
-            "month_cn": date_ctx.get("month_cn"),
-            "weekday_cn": date_ctx.get("weekday_cn"),
-            "day_of_year": date_ctx.get("day_of_year"),
-            "days_in_year": date_ctx.get("days_in_year"),
-        })
+        if lang == "en":
+            _MONTH_EN = ["January", "February", "March", "April", "May", "June",
+                         "July", "August", "September", "October", "November", "December"]
+            _WEEKDAY_EN = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+            _now = _dt.now()
+            month_idx = _now.month - 1
+            weekday_idx = date_ctx.get("weekday", _now.weekday())
+            result.update({
+                "year": date_ctx.get("year"),
+                "day": date_ctx.get("day"),
+                "month_cn": _MONTH_EN[month_idx],
+                "weekday_cn": _WEEKDAY_EN[weekday_idx],
+                "day_of_year": date_ctx.get("day_of_year"),
+                "days_in_year": date_ctx.get("days_in_year"),
+            })
+        else:
+            result.update({
+                "year": date_ctx.get("year"),
+                "day": date_ctx.get("day"),
+                "month_cn": date_ctx.get("month_cn"),
+                "weekday_cn": date_ctx.get("weekday_cn"),
+                "day_of_year": date_ctx.get("day_of_year"),
+                "days_in_year": date_ctx.get("days_in_year"),
+            })
         return result
     if provider == "lifebar":
         import calendar
@@ -398,6 +422,7 @@ async def _generate_computed_content(mode_def: dict, content_cfg: dict, fallback
         now = datetime.now()
         date_ctx = kwargs.get("date_ctx", {}) or {}
         cfg = kwargs.get("config") or {}
+        lang = kwargs.get("language", "zh")
 
         day_of_year = date_ctx.get("day_of_year") or now.timetuple().tm_yday
         days_in_year = date_ctx.get("days_in_year") or 365
@@ -414,6 +439,19 @@ async def _generate_computed_content(mode_def: dict, content_cfg: dict, fallback
         age = now.year - birth_year
         life_pct = min(round(age / life_expect * 100, 1), 100.0)
 
+        if lang == "en":
+            _MONTH_EN_SHORT = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
+                               "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+            return {
+                "year_pct": year_pct, "year_label": f"{now.year} elapsed",
+                "month_pct": month_pct, "month_label": _MONTH_EN_SHORT[now.month - 1],
+                "week_pct": week_pct, "week_label": "Week",
+                "life_pct": life_pct, "life_label": "Life",
+                "day_of_year": day_of_year, "days_in_year": days_in_year,
+                "day": now.day, "days_in_month": days_in_month,
+                "weekday_num": weekday_num, "week_total": 7,
+                "age": age, "life_expect": life_expect,
+            }
         return {
             "year_pct": year_pct, "year_label": f"{now.year} 年已过",
             "month_pct": month_pct, "month_label": f"{now.month}月",
@@ -427,32 +465,58 @@ async def _generate_computed_content(mode_def: dict, content_cfg: dict, fallback
 
     if provider == "memo":
         config = kwargs.get("config") or {}
+        lang = kwargs.get("language", "zh")
         mode_settings = config.get("mode_settings", {}) if isinstance(config.get("mode_settings", {}), dict) else {}
         memo_text = mode_settings.get("memo_text", "") if isinstance(mode_settings.get("memo_text", ""), str) else ""
         if not memo_text:
             memo_text = config.get("memo_text", "")
         memo_text = memo_text if isinstance(memo_text, str) else ""
         if not memo_text:
-            memo_text = fallback.get("memo_text", "在配置页面设置你的便签内容")
+            default_hint = "Set your memo in the config page." if lang == "en" else "在配置页面设置你的便签内容"
+            memo_text = fallback.get("memo_text", default_hint)
         return {"memo_text": memo_text}
 
     if provider == "habit":
         config = kwargs.get("config") or {}
-        mac = config.get("mac", "")
-        try:
-            from .stats_store import get_habit_status
-            habits = await get_habit_status(mac)
-            completed = sum(1 for h in habits if h.get("status") == "✓")
-            total = len(habits) if habits else 7
-            return {
-                "habits": habits,
-                "summary": f"本周已完成 {completed}/{total} 项习惯",
-                "week_progress": completed,
-                "week_total": total,
-            }
-        except (OSError, TypeError, ValueError):
-            logger.warning("[JSONContent] Failed to load habit status for %s", mac, exc_info=True)
-            return dict(fallback)
+        lang = kwargs.get("language", "zh")
+        configured_items = None
+        mo = config.get("mode_overrides", {})
+        if isinstance(mo, dict):
+            habit_ov = mo.get("HABIT", {})
+            if isinstance(habit_ov, dict):
+                configured_items = habit_ov.get("habitItems")
+
+        habits = []
+        if isinstance(configured_items, list) and configured_items:
+            for item in configured_items:
+                if isinstance(item, dict):
+                    n = item.get("name", "")
+                    done = bool(item.get("done", False))
+                elif isinstance(item, str):
+                    n = item
+                    done = False
+                else:
+                    continue
+                if n:
+                    habits.append({"name": n, "done": done, "status": "●" if done else "○"})
+
+        completed = sum(1 for h in habits if h.get("done"))
+        total = len(habits) if habits else 0
+        if habits:
+            lines = [f"{h['name']} {h['status']}" for h in habits]
+            if lang == "en":
+                lines.append(f"\nCompleted {completed}/{total} today")
+            else:
+                lines.append(f"\n今日已完成 {completed}/{total} 项")
+            summary = "\n".join(lines)
+        else:
+            summary = fallback.get("summary", "")
+        return {
+            "habits": habits,
+            "summary": summary,
+            "week_progress": completed,
+            "week_total": total,
+        }
 
     if provider == "calendar_grid":
         import calendar as cal_mod
@@ -460,11 +524,73 @@ async def _generate_computed_content(mode_def: dict, content_cfg: dict, fallback
         from zhdate import ZhDate
         from .config import SOLAR_FESTIVALS, LUNAR_FESTIVALS, SOLAR_TERMS
 
+        lang = kwargs.get("language", "zh")
+        is_en = lang == "en"
+
+        EN_HOLIDAYS: dict[tuple[int, int], str] = {
+            (1, 1): "New Year",
+            (2, 14): "Valentine",
+            (3, 8): "Women's",
+            (3, 17): "St Patrick",
+            (4, 1): "April Fool",
+            (4, 22): "Earth Day",
+            (5, 1): "May Day",
+            (6, 1): "Children",
+            (7, 4): "July 4th",
+            (10, 31): "Halloween",
+            (11, 11): "Veterans",
+            (12, 24): "Xmas Eve",
+            (12, 25): "Christmas",
+            (12, 31): "NYE",
+        }
+
+        def _en_floating_holidays(y: int, m: int) -> dict[int, str]:
+            result: dict[int, str] = {}
+            if m == 1:
+                _jan1_wd = datetime(y, 1, 1).weekday()
+                mlk = 15 + (0 - _jan1_wd) % 7 + 7
+                result[mlk] = "MLK Day"
+            if m == 2:
+                _feb1_wd = datetime(y, 2, 1).weekday()
+                pres = 15 + (0 - _feb1_wd) % 7 + 7
+                result[pres] = "President"
+            if m == 5:
+                last_mon = 31
+                while datetime(y, 5, last_mon).weekday() != 0:
+                    last_mon -= 1
+                result[last_mon] = "Memorial"
+            if m == 9:
+                _sep1_wd = datetime(y, 9, 1).weekday()
+                labor = 1 + (0 - _sep1_wd) % 7
+                result[labor] = "Labor Day"
+            if m == 10:
+                _oct1_wd = datetime(y, 10, 1).weekday()
+                columbus = 8 + (0 - _oct1_wd) % 7
+                result[columbus] = "Columbus"
+            if m == 11:
+                _nov1_wd = datetime(y, 11, 1).weekday()
+                thx = 22 + (3 - _nov1_wd) % 7
+                result[thx] = "Thxgiving"
+            if m == 3 or m == 4:
+                import math
+                a = y % 19; b, c = divmod(y, 100); d, e = divmod(b, 4)
+                f = (b + 8) // 25; g = (b - f + 1) // 3
+                h = (19 * a + b - d - g + 15) % 30; i, k = divmod(c, 4)
+                l = (32 + 2 * e + 2 * i - h - k) % 7
+                em = (a + 11 * h + 22 * l) // 451
+                easter_m = (h + l - 7 * em + 114) // 31
+                easter_d = ((h + l - 7 * em + 114) % 31) + 1
+                if easter_m == m:
+                    result[easter_d] = "Easter"
+            return result
+
         LUNAR_DAY_NAMES = [
             "", "初一", "初二", "初三", "初四", "初五", "初六", "初七", "初八", "初九", "初十",
             "十一", "十二", "十三", "十四", "十五", "十六", "十七", "十八", "十九", "二十",
             "廿一", "廿二", "廿三", "廿四", "廿五", "廿六", "廿七", "廿八", "廿九", "三十",
         ]
+        _MONTH_EN = ["", "January", "February", "March", "April", "May", "June",
+                     "July", "August", "September", "October", "November", "December"]
 
         now = datetime.now()
         year, month, day = now.year, now.month, now.day
@@ -487,6 +613,11 @@ async def _generate_computed_content(mode_def: dict, content_cfg: dict, fallback
         reminders = mode_settings.get("reminders", {})
         if not isinstance(reminders, dict):
             reminders = {}
+        mo = config.get("mode_overrides", {})
+        if isinstance(mo, dict):
+            cal_ov = mo.get("CALENDAR", {})
+            if isinstance(cal_ov, dict) and isinstance(cal_ov.get("reminders"), dict):
+                reminders = {**reminders, **cal_ov["reminders"]}
 
         day_labels: dict[str, str] = {}
         day_label_types: dict[str, str] = {}
@@ -497,8 +628,17 @@ async def _generate_computed_content(mode_def: dict, content_cfg: dict, fallback
             reminder_key = f"{month}-{d}"
             if reminder_key in reminders:
                 text = str(reminders[reminder_key])
-                day_labels[ds] = (text[:5] + "…") if len(text) > 5 else text
+                max_len = 8 if is_en else 5
+                day_labels[ds] = (text[:max_len] + "…") if len(text) > max_len else text
                 day_label_types[ds] = "reminder"
+                continue
+            if is_en:
+                floating = _en_floating_holidays(year, month)
+                hol = EN_HOLIDAYS.get((month, d), "") or floating.get(d, "")
+                day_labels[ds] = hol
+                day_label_types[ds] = "festival" if hol else ""
+                if d == day:
+                    today_festival = hol
                 continue
             solar_fest = SOLAR_FESTIVALS.get((month, d), "")
             solar_term = SOLAR_TERMS.get((year, month, d), "")
@@ -529,11 +669,18 @@ async def _generate_computed_content(mode_def: dict, content_cfg: dict, fallback
                 today_festival = solar_fest or lunar_fest or solar_term
 
         today_key = f"{month}-{day}"
-        reminder_hint = f"今天的提醒: {reminders[today_key]}" if today_key in reminders else ""
+        if is_en:
+            reminder_hint = f"Today's reminder: {reminders[today_key]}" if today_key in reminders else ""
+            cal_title = f"{_MONTH_EN[month]} {year}"
+            weekday_headers = ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"]
+        else:
+            reminder_hint = f"今天的提醒: {reminders[today_key]}" if today_key in reminders else ""
+            cal_title = f"{year}年{month}月"
+            weekday_headers = ["一", "二", "三", "四", "五", "六", "日"]
 
         return {
-            "calendar_title": f"{year}年{month}月",
-            "weekday_headers": ["一", "二", "三", "四", "五", "六", "日"],
+            "calendar_title": cal_title,
+            "weekday_headers": weekday_headers,
             "calendar_rows": rows,
             "today_day": str(day),
             "day_labels": day_labels,
@@ -545,11 +692,19 @@ async def _generate_computed_content(mode_def: dict, content_cfg: dict, fallback
 
     if provider == "timetable":
         from datetime import datetime
+        lang = kwargs.get("language", "zh")
+        is_en = lang == "en"
         now = datetime.now()
         config = kwargs.get("config") or {}
         mode_settings = config.get("mode_settings", {})
         if not isinstance(mode_settings, dict):
             mode_settings = {}
+        mo = config.get("mode_overrides", {})
+        if isinstance(mo, dict):
+            tt_ov = mo.get("TIMETABLE", {})
+            if isinstance(tt_ov, dict):
+                if "style" in tt_ov:
+                    mode_settings = {**mode_settings, **tt_ov}
 
         style = str(mode_settings.get("style", "daily"))
         periods = mode_settings.get("periods")
@@ -558,15 +713,30 @@ async def _generate_computed_content(mode_def: dict, content_cfg: dict, fallback
         if not isinstance(periods, list) or not isinstance(courses, dict):
             style = "weekly"
             periods = ["08:00-09:30", "10:00-11:30", "14:00-15:30", "16:00-17:30"]
-            courses = {
-                "0-0": "高等数学/A201", "0-2": "线性代数/A201",
-                "1-1": "大学英语/B305", "1-3": "体育/操场",
-                "2-0": "数据结构/C102", "2-2": "计算机网络/C102",
-                "3-1": "概率论/A201", "3-3": "毛概/D405",
-                "4-0": "操作系统/C102",
-            }
+            if is_en:
+                courses = {
+                    "0-0": "Calculus/A201", "0-2": "Linear Algebra/A201",
+                    "1-1": "English/B305", "1-3": "PE/Gym",
+                    "2-0": "Data Struct/C102", "2-2": "Networks/C102",
+                    "3-1": "Probability/A201", "3-3": "Politics/D405",
+                    "4-0": "OS/C102",
+                }
+            else:
+                courses = {
+                    "0-0": "高等数学/A201", "0-2": "线性代数/A201",
+                    "1-1": "大学英语/B305", "1-3": "体育/操场",
+                    "2-0": "数据结构/C102", "2-2": "计算机网络/C102",
+                    "3-1": "概率论/A201", "3-3": "毛概/D405",
+                    "4-0": "操作系统/C102",
+                }
 
-        weekday_names = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"]
+        if is_en:
+            weekday_names = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+            weekdays_short = ["Mon", "Tue", "Wed", "Thu", "Fri"]
+        else:
+            weekday_names = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"]
+            weekdays_short = ["一", "二", "三", "四", "五"]
+
         wd = now.weekday()
         current_day = wd if wd < 5 else -1
 
@@ -581,8 +751,6 @@ async def _generate_computed_content(mode_def: dict, content_cfg: dict, fallback
             except (ValueError, IndexError):
                 pass
 
-        weekdays_short = ["一", "二", "三", "四", "五"]
-
         if style == "weekly":
             grid: list[list[str]] = []
             for pi in range(len(periods)):
@@ -590,6 +758,10 @@ async def _generate_computed_content(mode_def: dict, content_cfg: dict, fallback
                 for di in range(5):
                     row.append(str(courses.get(f"{di}-{pi}", "")))
                 grid.append(row)
+            if is_en:
+                title = f"{weekday_names[wd]} · This Week" if wd < 7 else "This Week"
+            else:
+                title = f"{weekday_names[wd]} · 本周课程" if wd < 7 else "本周课程"
             return {
                 "style": "weekly",
                 "periods": periods,
@@ -597,7 +769,7 @@ async def _generate_computed_content(mode_def: dict, content_cfg: dict, fallback
                 "current_day": current_day,
                 "current_period": current_period,
                 "weekdays": weekdays_short,
-                "timetable_title": f"{weekday_names[wd]} · 本周课程" if wd < 7 else "本周课程",
+                "timetable_title": title,
             }
 
         slots = []
@@ -616,9 +788,13 @@ async def _generate_computed_content(mode_def: dict, content_cfg: dict, fallback
                     "location": location,
                     "current": pi == current_period,
                 })
+        if is_en:
+            title = f"{weekday_names[wd]} · Today" if wd < 7 else "Today"
+        else:
+            title = f"{weekday_names[wd]} · 今日课程" if wd < 7 else "今日课程"
         return {
             "style": "daily",
-            "timetable_title": f"{weekday_names[wd]} · 今日课程" if wd < 7 else "今日课程",
+            "timetable_title": title,
             "slots": slots,
             "slot_count": len(slots),
             "current_day": current_day,
@@ -719,7 +895,11 @@ async def _generate_external_data_content(mode_def: dict, content_cfg: dict, fal
             if not isinstance(days, int):
                 days = 4
             days = max(1, min(7, days))
-            data = await get_weather_forecast(days=days, **extract_location_settings(config))
+            data = await get_weather_forecast(
+                days=days,
+                language=kwargs.get("language", "zh") or "zh",
+                **extract_location_settings(config),
+            )
             if not data:
                 return dict(fallback)
             if not data.get("today_temp") or data["today_temp"] == "--":
@@ -761,9 +941,10 @@ async def _generate_image_gen_content(mode_def: dict, content_cfg: dict, fallbac
                 prompt_hint=prompt_hint,
                 prompt_template=prompt_template,
                 fallback_title=fallback_title,
-                image_api_key=kwargs.get("image_api_key") or "",
+                image_api_key=kwargs.get("image_api_key"),
                 api_key=api_key,
                 llm_base_url=kwargs.get("llm_base_url"),
+                language=kwargs.get("language", "zh"),
             )
             # 仅当真正拿到图像地址时才使用生成结果；否则回退到 JSON 中的 fallback/fallback_pool
             if mode_id != "ARTWALL":

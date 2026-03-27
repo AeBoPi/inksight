@@ -135,7 +135,7 @@ This is the safest way to learn the product without constantly rewriting your li
 
 ## 7. Recommended reading order
 
-- Understand the website first: [`website.md`](website.md)
-- If you already have hardware: [`hardware.md`](hardware.md) → [`assembly.md`](assembly.md) → [`flash.md`](flash.md)
-- Ready to configure the device: [`config.md`](config.md)
-- Ready to enable AI features: [`api-key.md`](api-key.md)
+- Understand the website first: [Website Guide](website)
+- If you already have hardware: [Hardware Guide](hardware) → [Assembly Guide](assembly) → [Web Flasher](flash)
+- Ready to configure the device: [Device Configuration](config)
+- Ready to enable AI features: [Configure API Key](api-key)

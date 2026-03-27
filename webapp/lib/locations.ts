@@ -157,8 +157,8 @@ interface StoredLocationQueryCacheItem {
 
 type StoredLocationQueryCache = Record<string, StoredLocationQueryCacheItem>;
 
-function normalizeQuery(query: string): string {
-  return query.trim().toLowerCase();
+function normalizeQuery(query: string, locale = "zh"): string {
+  return `${locale}:${query.trim().toLowerCase()}`;
 }
 
 function readLocationQueryCache(): StoredLocationQueryCache {
@@ -196,16 +196,20 @@ function writeLocationQueryCache(cache: StoredLocationQueryCache): void {
   safeWriteStorage(LOCATION_QUERY_CACHE_STORAGE_KEY, JSON.stringify(Object.fromEntries(entries)));
 }
 
-export function getCachedLocationResults(query: string): LocationOption[] | null {
-  const normalizedQuery = normalizeQuery(query);
+export function getCachedLocationResults(query: string, locale = "zh"): LocationOption[] | null {
+  const normalizedQuery = normalizeQuery(query, locale);
   if (!normalizedQuery) return null;
   const cache = readLocationQueryCache();
   const entry = cache[normalizedQuery];
   return entry?.items?.length ? entry.items : null;
 }
 
-export function cacheLocationResults(query: string, items: Array<Partial<LocationOption> | null | undefined>): LocationOption[] {
-  const normalizedQuery = normalizeQuery(query);
+export function cacheLocationResults(
+  query: string,
+  items: Array<Partial<LocationOption> | null | undefined>,
+  locale = "zh",
+): LocationOption[] {
+  const normalizedQuery = normalizeQuery(query, locale);
   const cleanedItems = dedupeLocationOptions(items, 10);
   if (!normalizedQuery || !cleanedItems.length) return cleanedItems;
   const cache = readLocationQueryCache();

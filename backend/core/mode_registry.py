@@ -40,6 +40,7 @@ RenderFn = Callable[..., Image.Image]
 
 MODES_DIR = os.path.join(os.path.dirname(__file__), "modes")
 BUILTIN_JSON_DIR = os.path.join(MODES_DIR, "builtin")
+BUILTIN_EN_DIR = os.path.join(BUILTIN_JSON_DIR, "en")
 CUSTOM_JSON_DIR = os.path.join(MODES_DIR, "custom")
 SCHEMA_PATH = os.path.join(MODES_DIR, "schema", "mode_schema.json")
 
@@ -76,6 +77,7 @@ class ModeRegistry:
     def __init__(self) -> None:
         self._builtin: dict[str, BuiltinMode] = {}
         self._json_modes: dict[str, JsonMode] = {}  # mode_id -> JsonMode
+        self._en_json_modes: dict[str, JsonMode] = {}  # mode_id -> English JsonMode
         self._device_modes: dict[str, set[str]] = {}  # mac -> set of mode_ids
 
     # ── Registration ─────────────────────────────────────────
@@ -156,6 +158,42 @@ class ModeRegistry:
             mid = self.load_json_mode(path, source=source)
             if mid:
                 loaded.append(mid)
+        return loaded
+
+    def load_en_directory(self, dir_path: str) -> list[str]:
+        """Load English mode overrides from a directory into _en_json_modes."""
+        loaded = []
+        if not os.path.isdir(dir_path):
+            return loaded
+        for fname in sorted(os.listdir(dir_path)):
+            if not fname.endswith(".json"):
+                continue
+            path = os.path.join(dir_path, fname)
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    definition = json.load(f)
+            except (json.JSONDecodeError, OSError) as e:
+                logger.error(f"[Registry] Failed to load EN mode {path}: {e}")
+                continue
+            mode_id = definition.get("mode_id", "").upper()
+            if not mode_id or not _validate_mode_def(definition):
+                logger.error(f"[Registry] Invalid EN mode file: {path}")
+                continue
+            info = ModeInfo(
+                mode_id=mode_id,
+                display_name=definition.get("display_name", mode_id),
+                icon=definition.get("icon", "star"),
+                cacheable=definition.get("cacheable", True),
+                description=definition.get("description", ""),
+                source="builtin_json_en",
+                settings_schema=definition.get("settings_schema", []) if isinstance(definition.get("settings_schema", []), list) else [],
+            )
+            self._en_json_modes[mode_id] = JsonMode(
+                info=info, definition=definition, file_path=path
+            )
+            loaded.append(mode_id)
+        if loaded:
+            logger.info(f"[Registry] Loaded {len(loaded)} English mode overrides")
         return loaded
 
     def unregister_custom(self, mode_id: str, mac: str | None = None) -> bool:
@@ -296,12 +334,16 @@ class ModeRegistry:
     def get_builtin(self, mode_id: str) -> BuiltinMode | None:
         return self._builtin.get(mode_id.upper())
 
-    def get_json_mode(self, mode_id: str, mac: str | None = None) -> JsonMode | None:
-        """Get a JSON mode. If mac is provided, only return if it belongs to that device."""
-        jm = self._json_modes.get(mode_id.upper())
+    def get_json_mode(self, mode_id: str, mac: str | None = None, *, language: str = "zh") -> JsonMode | None:
+        """Get a JSON mode. If language is 'en', prefer English override."""
+        uid = mode_id.upper()
+        if language == "en":
+            en_jm = self._en_json_modes.get(uid)
+            if en_jm:
+                return en_jm
+        jm = self._json_modes.get(uid)
         if jm and mac:
             mac = mac.upper()
-            # Only return if mode belongs to this device, or if mode has no mac (legacy/builtin_json)
             if jm.mac is not None and jm.mac != mac:
                 return None
         return jm
@@ -389,20 +431,10 @@ def get_registry() -> ModeRegistry:
 
 
 def _init_registry(registry: ModeRegistry) -> None:
-    """Initialize the registry with builtin modes and load JSON modes."""
-    _register_builtin_python_modes(registry)
-
     builtin_loaded = registry.load_directory(BUILTIN_JSON_DIR, source="builtin_json")
     if builtin_loaded:
         logger.info(f"[Registry] Loaded {len(builtin_loaded)} builtin JSON modes")
-
-    # Custom modes are now stored in database, not loaded from files
-    # Removed: custom_loaded = registry.load_directory(CUSTOM_JSON_DIR, source="custom")
-
-
-def _register_builtin_python_modes(registry: ModeRegistry) -> None:
-    """All built-in modes are now JSON-defined; keep hook for future use."""
-    return None
+    registry.load_en_directory(BUILTIN_EN_DIR)
 
 
 def reset_registry() -> None:

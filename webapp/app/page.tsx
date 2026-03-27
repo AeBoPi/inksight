@@ -282,6 +282,15 @@ export default async function Home() {
                     {isEn ? "Build Yours" : "开始制作"}
                   </Button>
                 </Link>
+                <Link href={withLocalePath(locale, "/preview")}>
+                  <Button
+                    variant="ghost"
+                    size="lg"
+                    className="text-ink-light hover:text-ink hover:bg-ink/5"
+                  >
+                    {isEn ? "Try Demo" : "无设备体验"}
+                  </Button>
+                </Link>
               </div>
             </div>
 
@@ -289,7 +298,7 @@ export default async function Home() {
             <div className="flex items-center justify-center animate-fade-in">
               <div className="relative w-full max-w-md aspect-[4/3] rounded-sm border border-ink/10 overflow-hidden">
                 <Image
-                  src="/images/intro.jpg"
+                  src={isEn ? "/images/intro_eng.jpg" : "/images/intro.jpg"}
                   alt={isEn ? "InkSight product preview" : "墨鱼AI墨水屏展示图"}
                   fill
                   className="object-cover"

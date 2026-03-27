@@ -71,10 +71,13 @@ body{font-family:var(--f);background:linear-gradient(135deg,#f5f5f0,#e8e8e0);col
 </head>
 <body>
 <div class="card">
+<div style="position:absolute;top:16px;right:16px;">
+<button id="langBtn" onclick="toggleLang()" style="background:none;border:1px solid var(--bd);border-radius:6px;padding:4px 8px;font-size:0.75rem;cursor:pointer;color:var(--gy)">EN</button>
+</div>
 <div class="hdr">
 <div class="logo">墨</div>
-<h1>InkSight <span style="font-weight:400;font-size:.85em">墨鱼</span></h1>
-<p>WiFi 配网</p>
+<h1 id="logoText">InkSight <span style="font-weight:400;font-size:.85em">墨鱼</span></h1>
+<p id="subtitle">WiFi 配网</p>
 </div>
 
 <div class="steps">
@@ -90,20 +93,24 @@ body{font-family:var(--f);background:linear-gradient(135deg,#f5f5f0,#e8e8e0);col
 <div class="wtab act" id="wtMan" onclick="switchWTab('manual')">手动输入</div>
 </div>
 <div id="wScan" class="hidden">
-<ul class="wl" id="wifiList"></ul>
+<div id="wScanLoading" style="text-align:center;padding:20px 0;color:var(--gy);font-size:.85rem">
+<div class="sp" style="display:inline-block;width:16px;height:16px;border:2px solid rgba(0,0,0,.1);border-top-color:var(--bk);border-radius:50%;animation:spin .7s linear infinite;vertical-align:middle;margin-right:8px"></div>
+<span id="scanText">正在扫描附近网络...</span>
+</div>
+<ul class="wl" id="wifiList" style="display:none"></ul>
 <div id="wSel" class="hidden" style="display:none;align-items:center;justify-content:space-between;padding:10px 12px;border:1px solid var(--bk);border-radius:8px;background:var(--bg);margin-bottom:10px">
 <span id="wSelName" style="font-size:.85rem;font-weight:500"></span>
-<a onclick="reShowList()" style="font-size:.72rem;color:var(--gy);cursor:pointer">重新选择</a>
+<a id="reselectBtn" onclick="reShowList()" style="font-size:.72rem;color:var(--gy);cursor:pointer">重新选择</a>
 </div>
 </div>
 <div id="wMan">
 <div class="fg">
-<label class="lbl">WiFi 名称 (SSID)</label>
+<label class="lbl" id="lblSsid">WiFi 名称 (SSID)</label>
 <input type="text" class="inp" id="ssidIn" placeholder="输入 SSID">
 </div>
 </div>
 <div class="fg">
-<label class="lbl">WiFi 密码</label>
+<label class="lbl" id="lblPw">WiFi 密码</label>
 <div class="pw">
 <input type="password" class="inp" id="pwIn" placeholder="输入密码">
 <button class="pw-btn" onclick="togglePw()" type="button" id="tpb">
@@ -112,58 +119,211 @@ body{font-family:var(--f);background:linear-gradient(135deg,#f5f5f0,#e8e8e0);col
 </div>
 </div>
 <div class="fg">
-<label class="lbl">服务器地址</label>
+<label class="lbl" id="srvTitle">服务器地址</label>
 <div class="wtabs" style="margin-bottom:8px">
 <div class="wtab act" id="srvOfficial" onclick="switchSrvMode('official')">官方服务</div>
 <div class="wtab" id="srvCustom" onclick="switchSrvMode('custom')">自定义服务</div>
 </div>
-<div id="srvOfficialTip" style="font-size:.72rem;color:var(--gy)"></div>
+<div id="srvOfficialTip" style="font-size:.72rem;color:var(--gy)">将使用官方云服务生成内容</div>
 <div id="srvCustomWrap" class="hidden">
 <input type="text" class="inp" id="srvIn" value="http://本地服务IP:8080" placeholder="例如: http://192.168.1.100:8080">
-<div style="font-size:.68rem;color:var(--gy);margin-top:3px">输入你自己部署的 InkSight 后端地址（含端口）</div>
+<div id="srvCusTip1" style="font-size:.68rem;color:var(--gy);margin-top:3px">输入你自己部署的 InkSight 后端地址（含端口）</div>
 <div style="margin-top:10px">
 <input type="text" class="inp" id="frontendPortIn" value="3000" placeholder="例如: 3000">
-<div style="font-size:.68rem;color:var(--gy);margin-top:3px">前端配置页端口，用于重启后跳转到 localhost:端口/config</div>
+<div id="srvCusTip2" style="font-size:.68rem;color:var(--gy);margin-top:3px">前端配置页端口，用于重启后跳转到 localhost:端口/config</div>
 </div>
 </div>
 </div>
-<button class="btn btn-ghost" id="cBtn" onclick="doConnect()"><span class="bt">连接并保存</span><div class="sp"></div></button>
+<button class="btn btn-ghost" id="cBtn" onclick="doConnect()"><span class="bt" id="btnConnText">连接并保存</span><div class="sp"></div></button>
 </div>
 
 <!-- Step 2: Success -->
 <div id="s2" class="hidden" style="text-align:center;padding:16px 0">
 <div class="si"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round"><path d="M20 6L9 17l-5-5"/></svg></div>
-<h3 style="font-family:var(--fs);font-size:1.05rem;margin-bottom:4px">配网完成</h3>
+<h3 id="s2Title" style="font-family:var(--fs);font-size:1.05rem;margin-bottom:4px">配网完成</h3>
 <p style="font-size:.82rem;color:var(--gy)">已连接到 <strong id="cSSID"></strong></p>
 
 <div class="link-box">
-<strong>下一步：</strong>设备将自动重启并联网，请使用配对码继续完成认领与配置。<br>
-<div style="margin-top:8px;padding:8px 10px;background:#fef3c7;border-radius:6px;font-size:.75rem;color:#92400e;font-weight:500">⚠ 跳转前请先断开 InkSight 热点，重新连接您的家庭 / 办公 WiFi</div>
+<strong id="s2Next">下一步：</strong><span id="s2Auto">设备将自动重启并联网，请使用配对码继续完成认领与配置。</span><br>
+<div id="s2Warn" style="margin-top:8px;padding:8px 10px;background:#fef3c7;border-radius:6px;font-size:.75rem;color:#92400e;font-weight:500">⚠ 跳转前请先断开 InkSight 热点，重新连接您的家庭 / 办公 WiFi</div>
 </div>
 
 <div id="pairWrap" class="hidden" style="margin-top:12px;padding:12px;border:1px solid var(--bd);border-radius:8px;background:#f8fafc">
-<div style="font-size:.76rem;color:var(--gy)">配对码</div>
+<div id="s2CodeLbl" style="font-size:.76rem;color:var(--gy)">配对码</div>
 <div id="pairCode" style="margin-top:6px;font-size:1.3rem;letter-spacing:.18em;font-weight:700">--------</div>
 </div>
 
 <div style="margin-top:16px;display:flex;gap:8px;justify-content:center">
-<button class="btn" onclick="doRestart()" style="width:auto;padding:9px 20px;font-size:.82rem">立即重启</button>
+<button class="btn" onclick="doRestart()" id="btnRest" style="width:auto;padding:9px 20px;font-size:.82rem">立即重启</button>
 <button class="btn" onclick="cancelCountdown()" id="cdCancelBtn" style="width:auto;padding:9px 16px;font-size:.8rem;background:var(--bg);color:var(--bk)">取消</button>
 </div>
-<p class="cd"><span id="cdN">10</span> 秒后自动重启</p>
-<div style="margin-top:10px"><button class="btn" onclick="resetP()" style="background:var(--bg);color:var(--bk);font-size:.8rem;padding:9px">重新配网</button></div>
+<p class="cd"><span id="cdN">10</span><span id="cdSuffix"> 秒后自动重启</span></p>
+<div style="margin-top:10px"><button class="btn" onclick="resetP()" id="btnReSetup" style="background:var(--bg);color:var(--bk);font-size:.8rem;padding:9px">重新配网</button></div>
 </div>
 
 <hr style="border:none;border-top:1px dashed var(--bd);margin:20px 0">
 <dl class="di">
 <div style="margin-bottom:3px"><dt>MAC:</dt><dd id="devMAC">--</dd></div>
-<div style="margin-bottom:3px"><dt>固件:</dt><dd>v1.0.0</dd></div>
-<div style="margin-bottom:3px"><dt>电池:</dt><dd id="devBat">--</dd></div>
+<div style="margin-bottom:3px"><dt id="lblFirmware">固件:</dt><dd>v1.0.0</dd></div>
+<div style="margin-bottom:3px"><dt id="lblBat">电池:</dt><dd id="devBat">--</dd></div>
 </dl>
 <div class="st w" id="pSt">等待配网...</div>
 </div>
 
 <script>
+var lang=localStorage.getItem('ink_lang')||'zh';
+var i18n={
+zh:{
+title:"InkSight 配网",
+logoText:"InkSight <span style=\"font-weight:400;font-size:.85em\">墨鱼</span>",
+subtitle:"WiFi 配网",
+tabScan:"选择网络",
+tabMan:"手动输入",
+scanning:"正在扫描附近网络...",
+reselect:"重新选择",
+ssidPh:"输入 SSID",
+pwPh:"输入密码",
+srvTitle:"服务器地址",
+srvOff:"官方服务",
+srvCus:"自定义服务",
+srvOffTip:"将使用官方云服务生成内容",
+srvCusTip1:"输入你自己部署的 InkSight 后端地址（含端口）",
+srvCusTip2:"前端配置页端口，用于重启后跳转到 localhost:端口/config",
+srvUrlPh:"例如: http://192.168.1.100:8080",
+srvPortPh:"例如: 3000",
+btnConn:"连接并保存",
+s2Title:"配网完成",
+s2Next:"下一步：",
+s2Auto:"设备将自动重启并联网，请使用配对码继续完成认领与配置。",
+s2Warn:"⚠ 跳转前请先断开 InkSight 热点，重新连接您的家庭 / 办公 WiFi",
+s2CodeLbl:"配对码",
+btnRest:"立即重启",
+btnCancel:"取消",
+cdSuffix:" 秒后自动重启",
+btnReSetup:"重新配网",
+lblFirmware:"固件:",
+lblBat:"电池:",
+lblSsid:"WiFi 名称 (SSID)",
+lblPw:"WiFi 密码",
+stWait:"等待配网...",
+errSsid:"请选择或输入 WiFi",
+errPw:"请输入密码",
+errPwLen:"密码至少 8 位",
+errUrl:"服务器地址需以 http:// 或 https:// 开头",
+errPort:"前端端口需为 2 到 5 位数字",
+msgConn:"正在连接 ",
+msgConnOk:"WiFi 已连接",
+msgConnFail:"连接失败",
+msgReqFail:"请求失败，请重试",
+msgSetupOk:"配网完成！",
+msgRest1:"设备重启中，即将跳转至配置页...",
+msgRest2:"设备重启中，请稍后在配置页输入配对码...",
+htmlRedir:"<h2>正在跳转至配置页</h2><p style=\"color:#888\">请确保已切换回家庭 WiFi</p>",
+htmlRedirLink:"点击此处手动跳转",
+htmlRestOk:"<h2>设备已重启</h2><p style=\"color:#888\">请切换回家庭 WiFi 后打开配置页，输入以下配对码继续认领设备。</p>",
+htmlRestFail:"<h2>配对码生成失败</h2><p style=\"color:#888\">请稍后重试配网流程。</p>",
+msgCancel:"自动重启已取消",
+msgScanFail:"扫描失败，请刷新页面重试或手动输入"
+},
+en:{
+title:"InkSight Setup",
+logoText:"InkSight",
+subtitle:"WiFi Setup",
+tabScan:"Scan",
+tabMan:"Manual",
+scanning:"Scanning for networks...",
+reselect:"Reselect",
+ssidPh:"Enter SSID",
+pwPh:"Enter Password",
+srvTitle:"Server URL",
+srvOff:"Official",
+srvCus:"Custom",
+srvOffTip:"Will use official cloud service",
+srvCusTip1:"Enter your self-hosted backend URL (with port)",
+srvCusTip2:"Frontend port, used for redirecting to localhost:port/config",
+srvUrlPh:"e.g. http://192.168.1.100:8080",
+srvPortPh:"e.g. 3000",
+btnConn:"Connect & Save",
+s2Title:"Setup Complete",
+s2Next:"Next Step: ",
+s2Auto:"Device will restart and connect. Use the pairing code to bind.",
+s2Warn:"⚠ Please disconnect from InkSight hotspot and reconnect to your home WiFi before redirecting.",
+s2CodeLbl:"Pairing Code",
+btnRest:"Restart Now",
+btnCancel:"Cancel",
+cdSuffix:"s to auto-restart",
+btnReSetup:"Restart Setup",
+lblFirmware:"Firmware:",
+lblBat:"Battery:",
+lblSsid:"WiFi Name (SSID)",
+lblPw:"WiFi Password",
+stWait:"Waiting for setup...",
+errSsid:"Please select or enter WiFi",
+errPw:"Please enter password",
+errPwLen:"Password must be at least 8 chars",
+errUrl:"Server URL must start with http:// or https://",
+errPort:"Frontend port must be 2-5 digits",
+msgConn:"Connecting to ",
+msgConnOk:"WiFi Connected",
+msgConnFail:"Connection Failed",
+msgReqFail:"Request failed, try again",
+msgSetupOk:"Setup Complete!",
+msgRest1:"Restarting, redirecting to config page...",
+msgRest2:"Restarting, please enter pairing code on config page later...",
+htmlRedir:"<h2>Redirecting to config</h2><p style=\"color:#888\">Please ensure you are connected to your home WiFi</p>",
+htmlRedirLink:"Click here to redirect manually",
+htmlRestOk:"<h2>Device Restarted</h2><p style=\"color:#888\">Please switch to your home WiFi, open the config page, and enter the pairing code below.</p>",
+htmlRestFail:"<h2>Pairing Code Failed</h2><p style=\"color:#888\">Please retry the setup process later.</p>",
+msgCancel:"Auto-restart cancelled",
+msgScanFail:"Scan failed, please refresh or enter manually"
+}
+};
+
+function t(k){return i18n[lang][k];}
+
+function applyLang(){
+document.title=t('title');
+document.getElementById('logoText').innerHTML=t('logoText');
+document.getElementById('subtitle').textContent=t('subtitle');
+document.getElementById('wtScan').textContent=t('tabScan');
+document.getElementById('wtMan').textContent=t('tabMan');
+document.getElementById('scanText').textContent=t('scanning');
+document.getElementById('reselectBtn').textContent=t('reselect');
+document.getElementById('lblSsid').textContent=t('lblSsid');
+document.getElementById('ssidIn').placeholder=t('ssidPh');
+document.getElementById('lblPw').textContent=t('lblPw');
+document.getElementById('pwIn').placeholder=t('pwPh');
+document.getElementById('srvTitle').textContent=t('srvTitle');
+document.getElementById('srvOfficial').textContent=t('srvOff');
+document.getElementById('srvCustom').textContent=t('srvCus');
+document.getElementById('srvOfficialTip').textContent=t('srvOffTip');
+document.getElementById('srvCusTip1').textContent=t('srvCusTip1');
+document.getElementById('srvCusTip2').textContent=t('srvCusTip2');
+document.getElementById('srvIn').placeholder=t('srvUrlPh');
+document.getElementById('frontendPortIn').placeholder=t('srvPortPh');
+document.getElementById('btnConnText').textContent=t('btnConn');
+document.getElementById('s2Title').textContent=t('s2Title');
+document.getElementById('s2Next').textContent=t('s2Next');
+document.getElementById('s2Auto').textContent=t('s2Auto');
+document.getElementById('s2Warn').textContent=t('s2Warn');
+document.getElementById('s2CodeLbl').textContent=t('s2CodeLbl');
+document.getElementById('btnRest').textContent=t('btnRest');
+document.getElementById('cdCancelBtn').textContent=t('btnCancel');
+document.getElementById('cdSuffix').textContent=t('cdSuffix');
+document.getElementById('btnReSetup').textContent=t('btnReSetup');
+document.getElementById('lblFirmware').textContent=t('lblFirmware');
+document.getElementById('lblBat').textContent=t('lblBat');
+var pSt=document.getElementById('pSt');
+if(pSt.textContent===i18n[lang==='zh'?'en':'zh'].stWait)pSt.textContent=t('stWait');
+document.getElementById('langBtn').textContent=lang==='zh'?'EN':'中';
+}
+
+function toggleLang(){
+lang=lang==='zh'?'en':'zh';
+localStorage.setItem('ink_lang',lang);
+applyLang();
+}
+
 var OFFICIAL_SERVER='https://web.inksight.site/';
 var OFFICIAL_CONFIG_URL='https://www.inksight.site/config';
 var LOCAL_DEFAULT_SERVER='http://本地服务IP:8080';
@@ -240,7 +400,7 @@ document.getElementById('wSelName').textContent=ssid;
 function reShowList(){
 document.getElementById('wtScan').classList.add('act');
 document.getElementById('wtMan').classList.remove('act');
-document.getElementById('wifiList').style.display='';
+document.getElementById('wifiList').style.display='block';
 var ws=document.getElementById('wSel');ws.style.display='none';ws.classList.add('hidden');
 document.querySelectorAll('.wi').forEach(function(i){i.classList.remove('sel')});
 ssid='';
@@ -258,13 +418,13 @@ var p=document.getElementById('pwIn').value;
 var sv=srvMode==='official'?OFFICIAL_SERVER:document.getElementById('srvIn').value.trim();
 var fp=srvMode==='official'?LOCAL_DEFAULT_FRONTEND_PORT:document.getElementById('frontendPortIn').value.trim();
 var st=document.getElementById('pSt'),btn=document.getElementById('cBtn');
-if(!s){st.className='st e';st.textContent='请选择或输入 WiFi';return;}
-if(!p){st.className='st e';st.textContent='请输入密码';return;}
-if(p.length<8){st.className='st e';st.textContent='密码至少 8 位';return;}
-if(sv&&!sv.match(/^https?:\/\//)){st.className='st e';st.textContent='服务器地址需以 http:// 或 https:// 开头';return;}
-if(srvMode==='custom'&&!/^\d{2,5}$/.test(fp)){st.className='st e';st.textContent='前端端口需为 2 到 5 位数字';return;}
+if(!s){st.className='st e';st.textContent=t('errSsid');return;}
+if(!p){st.className='st e';st.textContent=t('errPw');return;}
+if(p.length<8){st.className='st e';st.textContent=t('errPwLen');return;}
+if(sv&&!sv.match(/^https?:\/\//)){st.className='st e';st.textContent=t('errUrl');return;}
+if(srvMode==='custom'&&!/^\d{2,5}$/.test(fp)){st.className='st e';st.textContent=t('errPort');return;}
 btn.classList.add('ld');btn.disabled=true;
-st.className='st c';st.textContent='正在连接 '+s+' ...';
+st.className='st c';st.textContent=t('msgConn')+s+' ...';
 srvUrl=normalizeServerUrl(sv);
 frontendPort=fp;
 
@@ -272,16 +432,16 @@ var fd=new FormData();fd.append('ssid',s);fd.append('pass',p);if(srvUrl)fd.appen
 fetch('/save_wifi',{method:'POST',body:fd}).then(function(r){return r.json()}).then(function(d){
 btn.classList.remove('ld');btn.disabled=false;
 if(d.ok){
-st.className='st s';st.textContent='WiFi 已连接';
+st.className='st s';st.textContent=t('msgConnOk');
 document.getElementById('cSSID').textContent=s;
 pairCode=(d.pair_code||'').toUpperCase();
 showSuccess();
 }else{
-st.className='st e';st.textContent=d.msg||'连接失败';
+st.className='st e';st.textContent=d.msg||t('msgConnFail');
 }
 }).catch(function(){
 btn.classList.remove('ld');btn.disabled=false;
-st.className='st e';st.textContent='请求失败，请重试';
+st.className='st e';st.textContent=t('msgReqFail');
 });
 }
 
@@ -290,7 +450,7 @@ document.getElementById('s1').classList.add('hidden');
 document.getElementById('s2').classList.remove('hidden');
 setStep(2);
 document.getElementById('pSt').className='st s';
-document.getElementById('pSt').textContent='配网完成！';
+document.getElementById('pSt').textContent=t('msgSetupOk');
 if(pairCode){
 document.getElementById('pairWrap').classList.remove('hidden');
 document.getElementById('pairCode').textContent=pairCode;
@@ -305,22 +465,22 @@ function doRestart(){
 if(ctm)clearInterval(ctm);
 var url=getConfigUrl();
 document.getElementById('pSt').className='st c';
-document.getElementById('pSt').textContent=url?'设备重启中，即将跳转至配置页...':'设备重启中，请稍后在配置页输入配对码...';
+document.getElementById('pSt').textContent=url?t('msgRest1'):t('msgRest2');
 fetch('/restart',{method:'POST'}).catch(function(){});
 setTimeout(function(){
 if(url){
-document.body.innerHTML='<div style="text-align:center;padding:50px;font-family:sans-serif"><h2>正在跳转至配置页</h2><p style="color:#888">请确保已切换回家庭 WiFi</p>'+(pairCode?'<div style="margin:18px auto 0;max-width:260px;padding:14px;border:1px solid #e5e7eb;border-radius:10px;background:#f8fafc"><div style="font-size:.8rem;color:#6b7280">配对码</div><div style="margin-top:6px;font-size:1.5rem;letter-spacing:.18em;font-weight:700">'+pairCode+'</div></div>':'')+'<p style="margin-top:12px"><a href="'+url+'" style="color:#3b82f6">点击此处手动跳转</a></p></div>';
+document.body.innerHTML='<div style="text-align:center;padding:50px;font-family:sans-serif">'+t('htmlRedir')+(pairCode?'<div style="margin:18px auto 0;max-width:260px;padding:14px;border:1px solid #e5e7eb;border-radius:10px;background:#f8fafc"><div style="font-size:.8rem;color:#6b7280">'+t('s2CodeLbl')+'</div><div style="margin-top:6px;font-size:1.5rem;letter-spacing:.18em;font-weight:700">'+pairCode+'</div></div>':'')+'<p style="margin-top:12px"><a href="'+url+'" style="color:#3b82f6">'+t('htmlRedirLink')+'</a></p></div>';
 window.location.href=url;
 return;
 }
-document.body.innerHTML=pairCode?'<div style="text-align:center;padding:50px;font-family:sans-serif"><h2>设备已重启</h2><p style="color:#888">请切换回家庭 WiFi 后打开配置页，输入以下配对码继续认领设备。</p><div style="margin:18px auto 0;max-width:260px;padding:14px;border:1px solid #e5e7eb;border-radius:10px;background:#f8fafc;font-size:1.5rem;letter-spacing:.18em;font-weight:700">'+pairCode+'</div></div>':'<div style="text-align:center;padding:50px;font-family:sans-serif"><h2>配对码生成失败</h2><p style="color:#888">请稍后重试配网流程。</p></div>';
+document.body.innerHTML=pairCode?'<div style="text-align:center;padding:50px;font-family:sans-serif">'+t('htmlRestOk')+'<div style="margin:18px auto 0;max-width:260px;padding:14px;border:1px solid #e5e7eb;border-radius:10px;background:#f8fafc;font-size:1.5rem;letter-spacing:.18em;font-weight:700">'+pairCode+'</div></div>':'<div style="text-align:center;padding:50px;font-family:sans-serif">'+t('htmlRestFail')+'</div>';
 },3000);
 }
 
 function cancelCountdown(){
 if(ctm){clearInterval(ctm);ctm=null;}
 document.getElementById('cdN').textContent='--';
-document.querySelector('.cd').textContent='自动重启已取消';
+document.querySelector('.cd').textContent=t('msgCancel');
 document.getElementById('cdCancelBtn').disabled=true;
 }
 
@@ -331,7 +491,7 @@ document.getElementById('s1').classList.remove('hidden');
 document.getElementById('s2').classList.add('hidden');
 document.getElementById('pwIn').value='';
 document.getElementById('pSt').className='st w';
-document.getElementById('pSt').textContent='等待配网...';
+document.getElementById('pSt').textContent=t('stWait');
 setStep(1);
 document.querySelectorAll('.wi').forEach(function(i){i.classList.remove('sel')});
 ssid='';
@@ -342,9 +502,13 @@ document.getElementById('cdN').textContent='10';
 }
 
 (function(){
+applyLang();
 switchWTab('manual');
 fetch('/scan').then(function(r){return r.json()}).then(function(d){
-var ul=document.getElementById('wifiList');ul.innerHTML='';
+document.getElementById('wScanLoading').style.display='none';
+var ul=document.getElementById('wifiList');
+ul.style.display='block';
+ul.innerHTML='';
 (d.networks||[]).forEach(function(n){
 var bars='';var s=n.rssi||0;
 var lvl=s>-50?4:s>-65?3:s>-75?2:1;
@@ -358,7 +522,9 @@ li.onclick=function(){selW(this)};
 li.innerHTML='<span class="wn">'+lock+n.ssid+'</span><span class="ws">'+bars+'</span>';
 ul.appendChild(li);
 });
-}).catch(function(){});
+}).catch(function(){
+document.getElementById('wScanLoading').innerHTML='扫描失败，请刷新页面重试或手动输入';
+});
 
 fetch('/info').then(function(r){return r.json()}).then(function(d){
 if(d.mac){devMac=d.mac;document.getElementById('devMAC').textContent=d.mac;}

@@ -134,44 +134,65 @@ def _build_context_str(
     daily_word: str = "",
     upcoming_holiday: str = "",
     days_until: int = 0,
+    language: str = "zh",
 ) -> str:
-    parts = [f"日期: {date_str}", f"天气: {weather_str}"]
-    if festival:
-        parts.append(f"节日: {festival}")
-    if upcoming_holiday and days_until > 0:
-        parts.append(f"{days_until}天后是{upcoming_holiday}")
-    if daily_word:
-        parts.append(f"每日一词: {daily_word}")
+    if language == "en":
+        parts = [f"Date: {date_str}", f"Weather: {weather_str}"]
+        if festival:
+            parts.append(f"Festival: {festival}")
+        if upcoming_holiday and days_until > 0:
+            parts.append(f"{upcoming_holiday} in {days_until} days")
+        if daily_word:
+            parts.append(f"Word of the day: {daily_word}")
+    else:
+        parts = [f"日期: {date_str}", f"天气: {weather_str}"]
+        if festival:
+            parts.append(f"节日: {festival}")
+        if upcoming_holiday and days_until > 0:
+            parts.append(f"{days_until}天后是{upcoming_holiday}")
+        if daily_word:
+            parts.append(f"每日一词: {daily_word}")
     return ", ".join(parts)
 
 
 def _build_style_instructions(
     character_tones: list[str] | None, language: str | None, content_tone: str | None
 ) -> str:
+    is_en = language == "en"
     parts = []
 
     if character_tones:
-        # Defense in depth: strip any prompt-like patterns even if schema missed them
         safe_tones = [t for t in character_tones if len(t) <= 20 and "\n" not in t]
         if safe_tones:
-            names = "、".join(safe_tones)
-            parts.append(f"请模仿「{names}」的说话风格和语气来表达")
+            names = ", ".join(safe_tones) if is_en else "、".join(safe_tones)
+            if is_en:
+                parts.append(f"Mimic the speaking style of {names}")
+            else:
+                parts.append(f"请模仿「{names}」的说话风格和语气来表达")
 
-    lang_map = {"zh": "中文", "en": "英文", "mixed": "中英混合"}
-    if language and language != "zh":
-        parts.append(f"请使用{lang_map.get(language, '中文')}为主要语言")
-
-    tone_map = {
-        "positive": "积极鼓励、温暖向上",
-        "neutral": "中性克制、理性平和",
-        "deep": "深沉内省、富有哲理",
-        "humor": "轻松幽默、诙谐有趣",
-    }
-    if content_tone and content_tone != "neutral":
-        parts.append(f"整体调性要{tone_map.get(content_tone, '中性克制')}")
+    if is_en:
+        tone_map = {
+            "positive": "uplifting and encouraging",
+            "neutral": "balanced and restrained",
+            "deep": "reflective and philosophical",
+            "humor": "light-hearted and witty",
+        }
+        if content_tone and content_tone != "neutral":
+            parts.append(f"Overall tone should be {tone_map.get(content_tone, 'balanced')}")
+    else:
+        tone_map_zh = {
+            "positive": "积极鼓励、温暖向上",
+            "neutral": "中性克制、理性平和",
+            "deep": "深沉内省、富有哲理",
+            "humor": "轻松幽默、诙谐有趣",
+        }
+        if content_tone and content_tone != "neutral":
+            parts.append(f"整体调性要{tone_map_zh.get(content_tone, '中性克制')}")
 
     if not parts:
         return ""
+    if is_en:
+        return "\nAdditional style: " + "; ".join(parts) + "."
     return "\n额外风格要求：" + "；".join(parts) + "。"
 
 
@@ -351,6 +372,7 @@ async def generate_content(
         daily_word,
         upcoming_holiday,
         days_until_holiday,
+        language=language or "zh",
     )
     prompt_template = PROMPTS.get(persona)
     if not prompt_template:
@@ -809,35 +831,48 @@ async def generate_artwall_content(
     image_api_key: str | None = None,
     api_key: str | None = None,
     llm_base_url: str | None = None,
+    language: str = "zh",
 ) -> dict:
-    """生成 ARTWALL 模式的内容 - 使用文生图模型。
-
-    标题生成优先使用上游传入/用户配置的 LLM provider + model，不再写死 deepseek。
-    """
+    """Generate ARTWALL mode content via text-to-image model."""
     if ctx is not None:
         date_str = ctx.date_str
         weather_str = ctx.weather_str
         festival = ctx.festival
-        # 如果 ContentContext 中带了 LLM 配置，则优先使用
         llm_provider = getattr(ctx, "llm_provider", llm_provider)
         llm_model = getattr(ctx, "llm_model", llm_model)
         api_key = getattr(ctx, "api_key", api_key)
-    logger.info("[ARTWALL] Starting content generation...")
+    logger.info("[ARTWALL] Starting content generation (lang=%s)...", language)
+
+    is_en = language == "en"
 
     context_parts = []
     if weather_str:
-        context_parts.append(f"天气：{weather_str}")
+        context_parts.append(f"Weather: {weather_str}" if is_en else f"天气：{weather_str}")
     if festival:
-        context_parts.append(f"节日：{festival}")
+        context_parts.append(f"Festival: {festival}" if is_en else f"节日：{festival}")
     if date_str:
-        context_parts.append(f"日期：{date_str}")
+        context_parts.append(f"Date: {date_str}" if is_en else f"日期：{date_str}")
 
-    context = "，".join(context_parts) if context_parts else "今日"
+    context = ", ".join(context_parts) if is_en else "，".join(context_parts)
+    if not context:
+        context = "Today" if is_en else "今日"
     intent_parts = [p.strip() for p in (mode_display_name, mode_description, prompt_hint, prompt_template) if isinstance(p, str) and p.strip()]
-    intent = "；".join(intent_parts[:4])
-    title_seed = (fallback_title or mode_display_name or "墨韵天成").strip()
+    intent = "; ".join(intent_parts[:4]) if is_en else "；".join(intent_parts[:4])
+    title_seed = (fallback_title or mode_display_name or ("Ink Muse" if is_en else "墨韵天成")).strip()
 
-    title_prompt = f"""根据以下信息，生成一个富有诗意和意境的艺术作品标题（8字以内）：
+    if is_en:
+        title_prompt = f"""Generate a poetic and evocative artwork title (max 5 words) based on the following:
+
+{context}
+Theme: {intent or title_seed}
+
+Requirements:
+1. Poetic and evocative, like a painting's title
+2. Maximum 5 words
+3. Atmospheric, leaving room for imagination
+4. Output only the title, nothing else"""
+    else:
+        title_prompt = f"""根据以下信息，生成一个富有诗意和意境的艺术作品标题（8字以内）：
 
 {context}
 主题要求：{intent or title_seed}
@@ -848,9 +883,8 @@ async def generate_artwall_content(
 3. 意境深远，留有想象空间
 4. 只输出标题，不要其他内容"""
 
-    artwork_title = title_seed or "墨韵天成"
+    artwork_title = title_seed
     try:
-        # 标题生成：优先使用用户/上游配置的 LLM provider + model
         title_text = await _call_llm(
             llm_provider,
             llm_model,
@@ -858,10 +892,10 @@ async def generate_artwall_content(
             api_key=api_key,
             base_url=_extract_llm_base_url(ctx) or llm_base_url,
         )
-        artwork_title = title_text.strip('"').strip("「」") or artwork_title
+        cleaned = title_text.strip('"').strip("「」").strip("'").strip()
+        artwork_title = cleaned or artwork_title
         logger.info(f"[ARTWALL] Generated title via {llm_provider}/{llm_model}: {artwork_title}")
     except _LLM_RECOVERABLE_ERRORS as e:
-        # 标题模型失败时继续执行文生图，避免整条 ARTWALL 流程直接降级为空图
         logger.warning(f"[ARTWALL] Title generation failed, use fallback title: {e}")
 
     try:

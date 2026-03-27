@@ -103,7 +103,7 @@
 
 ## 7. 相关文档
 
-- 设备配置：[`config.md`](config.md)
-- 网站使用指南：[`website.md`](website.md)
-- 本地部署：[`deploy.md`](deploy.md)
-- FAQ：[`faq.md`](faq.md)
+- [设备配置指南](config)
+- [网站使用指南](website)
+- [本地部署指南](deploy)
+- [常见问题 FAQ](faq)
