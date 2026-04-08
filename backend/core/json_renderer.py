@@ -69,7 +69,7 @@ _BUILTIN_STATIC_ATTRIBUTIONS = {
     "zh": {
         "ARTWALL": "— 墨上观形",
         "BIAS": "— 见自己",
-        "BRIEFING": "— 今日速览",
+        "BRIEFING": "— 科技改变生活",
         "CALENDAR": "— 日有其序",
         "CHALLENGE": "— 试试看",
         "COUNTDOWN": "— 静待那天",
@@ -89,7 +89,7 @@ _BUILTIN_STATIC_ATTRIBUTIONS = {
     "en": {
         "ARTWALL": "— Ink Art",
         "BIAS": "— Think Clearly",
-        "BRIEFING": "— AI Brief",
+        "BRIEFING": "— Tech Brief",
         "CALENDAR": "— InkSight",
         "CHALLENGE": "— Just Do It",
         "COUNTDOWN": "— Remember",
@@ -129,6 +129,16 @@ def _localized_footer_attribution(mode_id: str, attribution: str, language: str)
         return attribution
     localized = _BUILTIN_STATIC_ATTRIBUTIONS.get(language, {}).get((mode_id or "").upper())
     return localized or attribution
+
+
+def _resolve_template(content: dict, template: str) -> str:
+    def _replace(m: re.Match) -> str:
+        key = m.group(1)
+        val = content.get(key, "")
+        if isinstance(val, list):
+            return ", ".join(str(v) for v in val)
+        return str(val)
+    return re.sub(r"\{(\w+)\}", _replace, template)
 
 
 def _convert_image_block(src: Image.Image, width: int, height: int, colors: int) -> Image.Image:
@@ -198,13 +208,7 @@ class RenderContext:
 
     def resolve(self, template: str) -> str:
         """Resolve {field} placeholders against content dict."""
-        def _replace(m: re.Match) -> str:
-            key = m.group(1)
-            val = self.content.get(key, "")
-            if isinstance(val, list):
-                return ", ".join(str(v) for v in val)
-            return str(val)
-        return re.sub(r"\{(\w+)\}", _replace, template)
+        return _resolve_template(self.content, template)
 
     def get_field(self, name: str) -> Any:
         return self.content.get(name, "")
@@ -230,6 +234,468 @@ class RenderContext:
     def paste_icon(self, icon: Image.Image, pos: tuple[int, int], fill: int = EINK_FG) -> None:
         """Paste a 1-bit icon onto the canvas, handling palette mode transparency."""
         paste_icon_onto(self.img, icon, pos, fill)
+
+
+@dataclass
+class ComponentBox:
+    x: int
+    y: int
+    width: int
+    height: int
+
+
+@dataclass
+class ComponentNode:
+    kind: str
+    props: dict
+    content: dict
+    children: list["ComponentNode"] = field(default_factory=list)
+    box: ComponentBox | None = None
+    measured_width: int = 0
+    measured_height: int = 0
+    draw_data: dict[str, Any] = field(default_factory=dict)
+
+
+def _merge_layout_dict(base: dict, override: dict) -> dict:
+    merged = dict(base)
+    for key, value in override.items():
+        if isinstance(value, dict) and isinstance(merged.get(key), dict):
+            merged[key] = _merge_layout_dict(merged[key], value)
+        else:
+            merged[key] = value
+    return merged
+
+
+def _uses_component_tree(body: Any, layout: dict) -> bool:
+    if layout.get("layout_engine") == "component_tree":
+        return True
+    if isinstance(body, dict):
+        return body.get("type") in {"column", "row", "repeat", "section_box", "box"}
+    return False
+
+
+def _scaled_value(value: Any, scale: float, default: int = 0, minimum: int = 0) -> int:
+    raw = value if isinstance(value, (int, float)) else default
+    return max(minimum, int(raw * scale))
+
+
+def _component_grow(node: ComponentNode) -> int:
+    grow = node.props.get("grow", node.props.get("flex_grow", 0))
+    try:
+        return max(0, int(grow))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _component_text_value(node: ComponentNode) -> str:
+    field_name = node.props.get("field")
+    template = node.props.get("template")
+    text = node.props.get("text")
+    if field_name:
+        value = node.content.get(field_name, "")
+        if isinstance(value, list):
+            return ", ".join(str(v) for v in value)
+        return str(value)
+    if template:
+        return _resolve_template(node.content, template)
+    if text:
+        return _resolve_template(node.content, str(text))
+    return ""
+
+
+def _component_padding(props: dict, scale: float) -> tuple[int, int, int, int]:
+    px = _scaled_value(props.get("padding_x"), scale)
+    py = _scaled_value(props.get("padding_y"), scale)
+    left = _scaled_value(props.get("padding_left"), scale, px)
+    right = _scaled_value(props.get("padding_right"), scale, px)
+    top = _scaled_value(props.get("padding_top"), scale, py)
+    bottom = _scaled_value(props.get("padding_bottom"), scale, py)
+    return left, top, right, bottom
+
+
+def _component_measure_text(node: ComponentNode, available_width: int | None, theme: dict, scale: float) -> None:
+    text = _component_text_value(node)
+    if not text:
+        node.measured_width = 0
+        node.measured_height = 0
+        node.draw_data = {"lines": [], "font": None, "line_height": 0}
+        return
+    font_size = _scaled_value(node.props.get("font_size"), scale, theme.get("body_font_size", 12), 6)
+    font_key = node.props.get("font", theme.get("body_font", "noto_serif_regular"))
+    if has_cjk(text):
+        font_key = _pick_cjk_font(font_key)
+    font = load_font(font_key, font_size)
+    max_lines = node.props.get("max_lines")
+    ellipsis = node.props.get("ellipsis", True)
+    if available_width is None:
+        lines = [text]
+    else:
+        lines = wrap_text(text, font, max(1, available_width))
+    if max_lines and len(lines) > max_lines:
+        lines = lines[:max_lines]
+        if lines and ellipsis:
+            lines[-1] = lines[-1].rstrip() + "..."
+    line_height = _scaled_value(node.props.get("line_height"), scale, font_size + theme.get("body_line_gap", 4), 1)
+    text_width = 0
+    for line in lines:
+        bbox = font.getbbox(line)
+        text_width = max(text_width, bbox[2] - bbox[0])
+    node.measured_width = available_width if available_width is not None else text_width
+    node.measured_height = len(lines) * line_height if lines else 0
+    node.draw_data = {
+        "lines": lines,
+        "font": font,
+        "line_height": line_height,
+        "text_width": text_width,
+    }
+
+
+def _build_component_node(defn: dict, content: dict) -> ComponentNode:
+    kind = defn.get("type", "")
+    if kind == "repeat":
+        items = content.get(defn.get("field", ""), [])
+        if not isinstance(items, list):
+            items = []
+        limit = defn.get("limit", defn.get("max_items", len(items)))
+        item_def = defn.get("item")
+        children: list[ComponentNode] = []
+        if isinstance(item_def, dict):
+            for idx, item in enumerate(items[:limit]):
+                item_content = dict(content)
+                item_content["index"] = idx + 1
+                item_content["_item"] = item
+                item_content["_value"] = item
+                if isinstance(item, dict):
+                    item_content.update(item)
+                children.append(_build_component_node(item_def, item_content))
+        return ComponentNode(kind=kind, props=defn, content=content, children=children)
+    children = [
+        _build_component_node(child, content)
+        for child in defn.get("children", [])
+        if isinstance(child, dict)
+    ]
+    return ComponentNode(kind=kind, props=defn, content=content, children=children)
+
+
+def _measure_component_node(node: ComponentNode, available_width: int | None, theme: dict, scale: float) -> None:
+    if node.kind == "text":
+        _component_measure_text(node, available_width, theme, scale)
+        return
+    if node.kind == "repeat":
+        gap = _scaled_value(node.props.get("gap"), scale)
+        total_height = 0
+        max_width = 0
+        for idx, child in enumerate(node.children):
+            _measure_component_node(child, available_width, theme, scale)
+            total_height += child.measured_height
+            if idx > 0:
+                total_height += gap
+            max_width = max(max_width, child.measured_width)
+        node.measured_width = available_width if available_width is not None else max_width
+        node.measured_height = total_height
+        node.draw_data = {"gap": gap}
+        return
+    if node.kind == "column":
+        left, top, right, bottom = _component_padding(node.props, scale)
+        gap = _scaled_value(node.props.get("gap"), scale)
+        inner_width = None if available_width is None else max(0, available_width - left - right)
+        total_height = top + bottom
+        max_width = 0
+        visible_count = 0
+        for child in node.children:
+            _measure_component_node(child, inner_width, theme, scale)
+            if child.measured_height <= 0 and child.measured_width <= 0:
+                continue
+            if visible_count > 0:
+                total_height += gap
+            total_height += child.measured_height
+            visible_count += 1
+            max_width = max(max_width, child.measured_width)
+        width = available_width if available_width is not None else max_width + left + right
+        min_height = _scaled_value(node.props.get("min_height"), scale)
+        fixed_height = _scaled_value(node.props.get("height"), scale)
+        node.measured_width = width
+        node.measured_height = max(total_height, min_height, fixed_height)
+        node.draw_data = {
+            "padding": (left, top, right, bottom),
+            "gap": gap,
+        }
+        return
+    if node.kind == "row":
+        left, top, right, bottom = _component_padding(node.props, scale)
+        gap = _scaled_value(node.props.get("gap"), scale)
+        inner_width = None if available_width is None else max(0, available_width - left - right)
+        total_gap = gap * max(0, len(node.children) - 1)
+        fixed_width = 0
+        grow_total = 0
+        for child in node.children:
+            if _component_grow(child) > 0:
+                grow_total += _component_grow(child)
+                continue
+            _measure_component_node(child, None, theme, scale)
+            fixed_width += child.measured_width
+        remaining_width = max(0, (inner_width or 0) - fixed_width - total_gap)
+        remaining_slots = grow_total
+        for child in node.children:
+            grow = _component_grow(child)
+            if grow <= 0:
+                continue
+            child_width = remaining_width if remaining_slots <= grow else remaining_width * grow // remaining_slots
+            _measure_component_node(child, child_width, theme, scale)
+            remaining_width -= child_width
+            remaining_slots -= grow
+        content_width = fixed_width + total_gap + sum(
+            child.measured_width for child in node.children if _component_grow(child) > 0
+        )
+        content_height = max((child.measured_height for child in node.children), default=0)
+        width = available_width if available_width is not None else content_width + left + right
+        min_height = _scaled_value(node.props.get("min_height"), scale)
+        fixed_height = _scaled_value(node.props.get("height"), scale)
+        node.measured_width = width
+        node.measured_height = max(content_height + top + bottom, min_height, fixed_height)
+        node.draw_data = {
+            "padding": (left, top, right, bottom),
+            "gap": gap,
+        }
+        return
+    if node.kind == "section_box":
+        title = _resolve_template(node.content, str(node.props.get("title", "")))
+        title_font_size = _scaled_value(node.props.get("title_font_size"), scale, theme.get("section_title_font_size", 12), 6)
+        title_font_key = node.props.get("title_font", theme.get("section_title_font", "noto_serif_regular"))
+        if has_cjk(title):
+            title_font_key = _pick_cjk_font(title_font_key)
+        title_font = load_font(title_font_key, title_font_size)
+        icon_name = node.props.get("icon")
+        icon_size = _scaled_value(node.props.get("icon_size"), scale, theme.get("section_icon_size", 12), 0)
+        title_gap = _scaled_value(node.props.get("title_gap"), scale, theme.get("section_title_gap", 6))
+        content_indent = _scaled_value(node.props.get("content_indent"), scale, theme.get("section_content_indent", 36))
+        child_gap = _scaled_value(node.props.get("gap"), scale, theme.get("section_content_gap", 4))
+        title_bbox = title_font.getbbox(title) if title else (0, 0, 0, 0)
+        title_height = max(icon_size, title_bbox[3] - title_bbox[1])
+        child_width = None if available_width is None else max(0, available_width - content_indent)
+        content_height = 0
+        visible_count = 0
+        for child in node.children:
+            _measure_component_node(child, child_width, theme, scale)
+            if child.measured_height <= 0 and child.measured_width <= 0:
+                continue
+            if visible_count > 0:
+                content_height += child_gap
+            content_height += child.measured_height
+            visible_count += 1
+        min_height = _scaled_value(node.props.get("min_height"), scale)
+        fixed_height = _scaled_value(node.props.get("height"), scale)
+        node.measured_width = available_width or max(0, content_indent + max((child.measured_width for child in node.children), default=0))
+        node.measured_height = max(title_height + title_gap + content_height, min_height, fixed_height)
+        node.draw_data = {
+            "title": title,
+            "title_font": title_font,
+            "title_height": title_height,
+            "title_gap": title_gap,
+            "icon_name": icon_name,
+            "icon_size": icon_size,
+            "content_indent": content_indent,
+            "child_gap": child_gap,
+        }
+        return
+    if node.kind == "box":
+        left, top, right, bottom = _component_padding(node.props, scale)
+        inner_width = None if available_width is None else max(0, available_width - left - right)
+        max_width = 0
+        max_height = 0
+        for child in node.children:
+            _measure_component_node(child, inner_width, theme, scale)
+            max_width = max(max_width, child.measured_width)
+            max_height = max(max_height, child.measured_height)
+        node.measured_width = available_width if available_width is not None else max_width + left + right
+        node.measured_height = max_height + top + bottom
+        node.draw_data = {"padding": (left, top, right, bottom)}
+        return
+    node.measured_width = 0
+    node.measured_height = 0
+    node.draw_data = {}
+
+
+def _layout_component_node(node: ComponentNode, x: int, y: int, width: int, height: int, theme: dict, scale: float) -> None:
+    node.box = ComponentBox(x, y, width, height)
+    if node.kind == "text":
+        return
+    if node.kind == "repeat":
+        gap = node.draw_data.get("gap", 0)
+        cursor_y = y
+        for child in node.children:
+            _layout_component_node(child, x, cursor_y, width, child.measured_height, theme, scale)
+            cursor_y += child.measured_height + gap
+        return
+    if node.kind == "column":
+        left, top, right, bottom = node.draw_data.get("padding", (0, 0, 0, 0))
+        gap = node.draw_data.get("gap", 0)
+        inner_x = x + left
+        inner_y = y + top
+        inner_width = max(0, width - left - right)
+        inner_height = max(0, height - top - bottom)
+        visible_children = [child for child in node.children if child.measured_height > 0 or child.measured_width > 0]
+        if not visible_children:
+            return
+        gap_total = gap * max(0, len(visible_children) - 1)
+        base_height = sum(child.measured_height for child in visible_children)
+        extra = max(0, inner_height - base_height - gap_total)
+        grow_total = sum(_component_grow(child) for child in visible_children)
+        justify = node.props.get("justify", "start")
+        cursor_y = inner_y
+        gap_step = gap
+        if grow_total <= 0:
+            if justify == "center":
+                cursor_y += extra // 2
+            elif justify == "end":
+                cursor_y += extra
+            elif justify == "space_between" and len(visible_children) > 1:
+                gap_step = gap + extra // (len(visible_children) - 1)
+        for idx, child in enumerate(visible_children):
+            child_height = child.measured_height
+            grow = _component_grow(child)
+            if grow_total > 0 and grow > 0:
+                extra_height = extra if grow_total <= grow else extra * grow // grow_total
+                child_height += extra_height
+                extra -= extra_height
+                grow_total -= grow
+            _layout_component_node(child, inner_x, cursor_y, inner_width, child_height, theme, scale)
+            cursor_y += child_height
+            if idx < len(visible_children) - 1:
+                cursor_y += gap_step
+        return
+    if node.kind == "row":
+        left, top, right, bottom = node.draw_data.get("padding", (0, 0, 0, 0))
+        gap = node.draw_data.get("gap", 0)
+        inner_x = x + left
+        inner_y = y + top
+        inner_width = max(0, width - left - right)
+        inner_height = max(0, height - top - bottom)
+        fixed_width = sum(child.measured_width for child in node.children if _component_grow(child) <= 0)
+        grow_children = [child for child in node.children if _component_grow(child) > 0]
+        grow_total = sum(_component_grow(child) for child in grow_children)
+        gap_total = gap * max(0, len(node.children) - 1)
+        remaining_width = max(0, inner_width - fixed_width - gap_total)
+        align = node.props.get("align", "center")
+        cursor_x = inner_x
+        for idx, child in enumerate(node.children):
+            grow = _component_grow(child)
+            child_width = child.measured_width
+            if grow > 0:
+                child_width = remaining_width if grow_total <= grow else remaining_width * grow // grow_total
+                remaining_width -= child_width
+                grow_total -= grow
+            child_height = child.measured_height
+            child_y = inner_y
+            if align == "center":
+                child_y = inner_y + max(0, (inner_height - child_height) // 2)
+            elif align == "end":
+                child_y = inner_y + max(0, inner_height - child_height)
+            elif align == "stretch":
+                child_height = inner_height
+            _layout_component_node(child, cursor_x, child_y, child_width, child_height, theme, scale)
+            cursor_x += child_width
+            if idx < len(node.children) - 1:
+                cursor_x += gap
+        return
+    if node.kind == "section_box":
+        title_gap = node.draw_data.get("title_gap", 0)
+        title_height = node.draw_data.get("title_height", 0)
+        content_indent = node.draw_data.get("content_indent", 0)
+        child_gap = node.draw_data.get("child_gap", 0)
+        child_x = x + content_indent
+        child_y = y + title_height + title_gap
+        child_width = max(0, width - content_indent)
+        for idx, child in enumerate([c for c in node.children if c.measured_height > 0 or c.measured_width > 0]):
+            _layout_component_node(child, child_x, child_y, child_width, child.measured_height, theme, scale)
+            child_y += child.measured_height
+            if idx < len(node.children) - 1:
+                child_y += child_gap
+        return
+    if node.kind == "box":
+        left, top, right, bottom = node.draw_data.get("padding", (0, 0, 0, 0))
+        inner_x = x + left
+        inner_y = y + top
+        inner_width = max(0, width - left - right)
+        inner_height = max(0, height - top - bottom)
+        for child in node.children:
+            _layout_component_node(child, inner_x, inner_y, inner_width, min(inner_height, child.measured_height), theme, scale)
+
+
+def _paint_component_node(ctx: RenderContext, node: ComponentNode, theme: dict, scale: float) -> None:
+    box = node.box
+    if box is None:
+        return
+    if node.kind == "text":
+        font = node.draw_data.get("font")
+        if font is None:
+            return
+        lines = node.draw_data.get("lines", [])
+        line_height = node.draw_data.get("line_height", 0)
+        align = node.props.get("align", "left")
+        y = box.y
+        for line in lines:
+            bbox = font.getbbox(line)
+            line_width = bbox[2] - bbox[0]
+            if align == "center":
+                x = box.x + max(0, (box.width - line_width) // 2)
+            elif align == "right":
+                x = box.x + max(0, box.width - line_width)
+            else:
+                x = box.x
+            ctx.draw.text((x, y), line, fill=ctx.resolve_color(node.props), font=font)
+            y += line_height
+        return
+    if node.kind == "section_box":
+        title = node.draw_data.get("title", "")
+        title_font = node.draw_data.get("title_font")
+        title_height = node.draw_data.get("title_height", 0)
+        icon_name = node.draw_data.get("icon_name")
+        icon_size = node.draw_data.get("icon_size", 0)
+        title_x = box.x
+        if icon_name:
+            icon_img = load_icon(icon_name, size=(icon_size, icon_size))
+            if icon_img:
+                ctx.paste_icon(icon_img, (title_x, box.y))
+                title_x += _scaled_value(theme.get("section_icon_gap"), scale, 16)
+        if title and title_font is not None:
+            title_y = box.y + max(0, (title_height - (title_font.getbbox(title)[3] - title_font.getbbox(title)[1])) // 2)
+            ctx.draw.text((title_x, title_y), title, fill=ctx.resolve_color(node.props), font=title_font)
+    for child in node.children:
+        _paint_component_node(ctx, child, theme, scale)
+
+
+def _render_component_tree_mode(
+    draw: ImageDraw.ImageDraw,
+    img: Image.Image,
+    content: dict,
+    body_tree: dict,
+    theme: dict,
+    *,
+    screen_w: int,
+    screen_h: int,
+    status_bar_bottom: int,
+    footer_height: int,
+    colors: int,
+) -> RenderContext:
+    ctx = RenderContext(
+        draw=draw,
+        img=img,
+        content=content,
+        screen_w=screen_w,
+        screen_h=screen_h,
+        y=status_bar_bottom,
+        footer_height=footer_height,
+        colors=colors,
+    )
+    scale = ctx.scale
+    root = _build_component_node(body_tree, content)
+    available_height = max(0, ctx.footer_top - status_bar_bottom)
+    _measure_component_node(root, screen_w, theme, scale)
+    root_height = available_height if root.kind == "column" else min(available_height, root.measured_height)
+    _layout_component_node(root, 0, status_bar_bottom, screen_w, root_height, theme, scale)
+    _paint_component_node(ctx, root, theme, scale)
+    return ctx
 
 
 # ── Public API ───────────────────────────────────────────────
@@ -259,14 +725,11 @@ def render_json_mode(
     draw = ImageDraw.Draw(img)
     apply_text_fontmode(draw)
     layout = mode_def.get("layout", {})
-
-    # Select screen-size-specific layout override if available
     overrides = mode_def.get("layout_overrides", {})
     size_key = f"{screen_w}x{screen_h}"
     if size_key in overrides:
-        layout = {**layout, **overrides[size_key]}
+        layout = _merge_layout_dict(layout, overrides[size_key])
 
-    # 1. Status bar
     sb = layout.get("status_bar", {})
     draw_status_bar(
         draw, img, date_str, weather_str, int(battery_pct), weather_code,
@@ -286,58 +749,71 @@ def render_json_mode(
     footer_height = int(ft_layout.get("height", 30) * min_scale)
     footer_top = screen_h - footer_height
 
-    # 2. Body blocks
     body = layout.get("body", [])
-    body_align = layout.get("body_align", "center")
-    _has_vcenter = any(
-        b.get("type") == "centered_text" and b.get("vertical_center", True)
-        for b in body
-    )
-
-    if _has_vcenter and len(body) == 1:
-        ctx = RenderContext(
-            draw=draw, img=img, content=content,
-            screen_w=screen_w, screen_h=screen_h,
-            y=status_bar_bottom, footer_height=footer_height, colors=colors,
+    if _uses_component_tree(body, layout):
+        theme = layout.get("component_theme", {})
+        ctx = _render_component_tree_mode(
+            draw,
+            img,
+            content,
+            body,
+            theme,
+            screen_w=screen_w,
+            screen_h=screen_h,
+            status_bar_bottom=status_bar_bottom,
+            footer_height=footer_height,
+            colors=colors,
         )
-        _render_centered_text(ctx, body[0], use_full_body=True)
-    elif body_align == "center" and body:
-        measure_img = Image.new("1", (screen_w, screen_h), EINK_BG)
-        measure_ctx = RenderContext(
-            draw=ImageDraw.Draw(measure_img), img=measure_img, content=content,
-            screen_w=screen_w, screen_h=screen_h,
-            y=status_bar_bottom, footer_height=footer_height,
-        )
-        apply_text_fontmode(measure_ctx.draw)
-        for block in body:
-            if measure_ctx.y >= footer_top - 10:
-                break
-            _render_block(measure_ctx, block)
-        content_height = measure_ctx.y - status_bar_bottom
-        available_height = footer_top - status_bar_bottom
-        offset = max(0, (available_height - content_height) // 2)
-
-        ctx = RenderContext(
-            draw=draw, img=img, content=content,
-            screen_w=screen_w, screen_h=screen_h,
-            y=status_bar_bottom + offset, footer_height=footer_height, colors=colors,
-        )
-        for block in body:
-            if ctx.y >= footer_top - 10:
-                break
-            _render_block(ctx, block)
     else:
-        ctx = RenderContext(
-            draw=draw, img=img, content=content,
-            screen_w=screen_w, screen_h=screen_h,
-            y=status_bar_bottom, footer_height=footer_height, colors=colors,
+        body_align = layout.get("body_align", "center")
+        _has_vcenter = any(
+            b.get("type") == "centered_text" and b.get("vertical_center", True)
+            for b in body
         )
-        for block in body:
-            if ctx.y >= footer_top - 10:
-                break
-            _render_block(ctx, block)
 
-    # 3. Footer
+        if _has_vcenter and len(body) == 1:
+            ctx = RenderContext(
+                draw=draw, img=img, content=content,
+                screen_w=screen_w, screen_h=screen_h,
+                y=status_bar_bottom, footer_height=footer_height, colors=colors,
+            )
+            _render_centered_text(ctx, body[0], use_full_body=True)
+        elif body_align == "center" and body:
+            measure_img = Image.new("1", (screen_w, screen_h), EINK_BG)
+            measure_ctx = RenderContext(
+                draw=ImageDraw.Draw(measure_img), img=measure_img, content=content,
+                screen_w=screen_w, screen_h=screen_h,
+                y=status_bar_bottom, footer_height=footer_height,
+            )
+            apply_text_fontmode(measure_ctx.draw)
+            for block in body:
+                if measure_ctx.y >= footer_top - 10:
+                    break
+                _render_block(measure_ctx, block)
+            content_height = measure_ctx.y - status_bar_bottom
+            available_height = footer_top - status_bar_bottom
+            offset = max(0, (available_height - content_height) // 2)
+
+            ctx = RenderContext(
+                draw=draw, img=img, content=content,
+                screen_w=screen_w, screen_h=screen_h,
+                y=status_bar_bottom + offset, footer_height=footer_height, colors=colors,
+            )
+            for block in body:
+                if ctx.y >= footer_top - 10:
+                    break
+                _render_block(ctx, block)
+        else:
+            ctx = RenderContext(
+                draw=draw, img=img, content=content,
+                screen_w=screen_w, screen_h=screen_h,
+                y=status_bar_bottom, footer_height=footer_height, colors=colors,
+            )
+            for block in body:
+                if ctx.y >= footer_top - 10:
+                    break
+                _render_block(ctx, block)
+
     ft = ft_layout
     mode_id = mode_def.get("mode_id", "")
     label = _localized_footer_label(mode_id, ft.get("label", mode_id), language)
@@ -456,27 +932,39 @@ def _render_text(ctx: RenderContext, block: dict) -> None:
         margin_x = int(ctx.screen_w * 0.06)
     max_lines = block.get("max_lines", 3)
     max_w = max(20, ctx.available_width - margin_x * 2)
+    line_height = block.get("line_height")
+    if line_height is not None:
+        line_height = int(line_height * ctx.scale)
+    else:
+        line_height = font_size + 6
 
     lines = wrap_text(text, font, max_w)
 
     if max_lines and len(lines) > max_lines:
         lines = lines[:max_lines]
-        if lines:
+        if lines and block.get("ellipsis", True):
             lines[-1] = lines[-1].rstrip() + "..."
 
+    start_y = ctx.y
+    rendered_lines = 0
+    last_line_h = font_size
     for line in lines:
-        if ctx.y >= ctx.footer_top - 10:
+        line_y = start_y + rendered_lines * line_height
+        if line_y >= ctx.footer_top - 10:
             break
         bbox = font.getbbox(line)
         lw = bbox[2] - bbox[0]
+        last_line_h = max(1, bbox[3] - bbox[1])
         if align == "center":
             x = ctx.x_offset + (ctx.available_width - lw) // 2
         elif align == "right":
             x = ctx.x_offset + ctx.available_width - margin_x - lw
         else:
             x = ctx.x_offset + margin_x
-        ctx.draw.text((x, ctx.y), line, fill=ctx.resolve_color(block), font=font)
-        ctx.y += font_size + 6
+        ctx.draw.text((x, line_y), line, fill=ctx.resolve_color(block), font=font)
+        rendered_lines += 1
+    if rendered_lines:
+        ctx.y = start_y + (rendered_lines - 1) * line_height + last_line_h
 
 
 def _render_separator(ctx: RenderContext, block: dict) -> None:
@@ -532,6 +1020,10 @@ def _render_section(ctx: RenderContext, block: dict) -> None:
             break
         _render_block(ctx, child)
 
+    mb = block.get("margin_bottom")
+    if mb is not None:
+        ctx.y += int(mb * ctx.scale)
+
 
 def _render_list(ctx: RenderContext, block: dict) -> None:
     field_name = block.get("field", "")
@@ -557,20 +1049,10 @@ def _render_list(ctx: RenderContext, block: dict) -> None:
     # Ensure CJK font for list items (poetry lines are Chinese strings)
     font_key_cjk = _pick_cjk_font(font_key)
     font = load_font(font_key_cjk, font_size)
-    item_height = spacing
-
     rendered_count = 0
+    last_item_spacing = spacing
+    last_item_last_line_h = font_size
     for i, item in enumerate(items[:max_items]):
-        if ctx.y + item_height > ctx.footer_top:
-            remaining = len(items) - rendered_count
-            if remaining > 0:
-                more_text = f"+{remaining} more"
-                more_font = load_font(_pick_cjk_font(font_key), int(11 * ctx.scale))
-                ctx.draw.text((ctx.x_offset + margin_x, ctx.y), more_text, fill=ctx.resolve_color(block), font=more_font)
-            break
-        if ctx.y >= ctx.footer_top - 10:
-            break
-
         if isinstance(item, dict):
             text = template
             for k, v in item.items():
@@ -588,24 +1070,47 @@ def _render_list(ctx: RenderContext, block: dict) -> None:
         right_col_w = int(80 * ctx.scale)
         max_text_w = ctx.available_width - margin_x * 2 if not right_field else ctx.available_width - margin_x - right_col_w
         lines = wrap_text(text, font, max_text_w)
+        item_height = spacing * max(1, len(lines))
+
+        if ctx.y + item_height > ctx.footer_top:
+            remaining = len(items) - rendered_count
+            if remaining > 0:
+                more_text = f"+{remaining} more"
+                more_font = load_font(_pick_cjk_font(font_key), int(11 * ctx.scale))
+                ctx.draw.text((ctx.x_offset + margin_x, ctx.y), more_text, fill=ctx.resolve_color(block), font=more_font)
+            break
+        if ctx.y >= ctx.footer_top - 10:
+            break
 
         color = ctx.resolve_color(block)
+        last_line_h = font_size
         if align == "center":
-            for ln in lines[:1]:
+            for line_idx, ln in enumerate(lines):
                 bbox = font.getbbox(ln)
                 lw = bbox[2] - bbox[0]
-                ctx.draw.text((ctx.x_offset + (ctx.available_width - lw) // 2, ctx.y), ln, fill=color, font=font)
+                last_line_h = max(1, bbox[3] - bbox[1])
+                ctx.draw.text((ctx.x_offset + (ctx.available_width - lw) // 2, ctx.y + line_idx * spacing), ln, fill=color, font=font)
         else:
-            for ln in lines[:1]:
-                ctx.draw.text((ctx.x_offset + margin_x, ctx.y), ln, fill=color, font=font)
+            for line_idx, ln in enumerate(lines):
+                bbox = font.getbbox(ln)
+                last_line_h = max(1, bbox[3] - bbox[1])
+                ctx.draw.text((ctx.x_offset + margin_x, ctx.y + line_idx * spacing), ln, fill=color, font=font)
 
         if right_field and isinstance(item, dict):
             rv = str(item.get(right_field, ""))
             if rv:
-                ctx.draw.text((ctx.x_offset + ctx.available_width - right_col_w, ctx.y), rv, fill=color, font=font)
+                score_y = ctx.y + (max(1, len(lines)) - 1) * spacing
+                score_bbox = font.getbbox(rv)
+                score_w = score_bbox[2] - score_bbox[0]
+                score_x = ctx.x_offset + ctx.available_width - margin_x - score_w
+                ctx.draw.text((score_x, score_y), rv, fill=color, font=font)
 
-        ctx.y += spacing
+        ctx.y += item_height
         rendered_count += 1
+        last_item_spacing = spacing
+        last_item_last_line_h = last_line_h
+    if rendered_count:
+        ctx.y = ctx.y - last_item_spacing + last_item_last_line_h
 
 
 def _render_vertical_stack(ctx: RenderContext, block: dict) -> None:

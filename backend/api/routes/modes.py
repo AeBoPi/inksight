@@ -356,13 +356,6 @@ async def custom_mode_preview(
             ctype = content_def.get("type")
             if ctype in ("llm", "llm_json", "image_gen"):
                 llm_mode_requires_quota = True
-            elif ctype == "external_data":
-                provider = content_def.get("provider", "")
-                if provider == "briefing":
-                    summarize = content_def.get("summarize", True)
-                    include_insight = content_def.get("include_insight", True)
-                    if summarize or include_insight:
-                        llm_mode_requires_quota = True
             elif ctype == "composite":
                 steps = content_def.get("steps", [])
                 if isinstance(steps, list):
@@ -373,14 +366,6 @@ async def custom_mode_preview(
                         if step_type in ("llm", "llm_json", "image_gen"):
                             llm_mode_requires_quota = True
                             break
-                        if step_type == "external_data":
-                            step_provider = step.get("provider", "")
-                            if step_provider == "briefing":
-                                step_summarize = step.get("summarize", True)
-                                step_include_insight = step.get("include_insight", True)
-                                if step_summarize or step_include_insight:
-                                    llm_mode_requires_quota = True
-                                    break
         except Exception:
             logger.warning("[CUSTOM_PREVIEW] Failed to detect llm requirements for custom mode", exc_info=True)
 

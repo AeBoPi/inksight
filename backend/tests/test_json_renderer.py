@@ -27,6 +27,30 @@ def _make_mode_def(body_blocks, content_type="static", footer=None):
     }
 
 
+def _make_component_tree_mode_def(body_tree, footer=None):
+    return {
+        "mode_id": "TREE_TEST",
+        "display_name": "Tree Test",
+        "content": {"type": "static"},
+        "layout": {
+            "layout_engine": "component_tree",
+            "status_bar": {"line_width": 1, "dashed": False},
+            "component_theme": {
+                "body_font_size": 12,
+                "body_line_gap": 4,
+                "section_title_font_size": 12,
+                "section_icon_size": 12,
+                "section_icon_gap": 16,
+                "section_title_gap": 6,
+                "section_content_indent": 36,
+                "section_content_gap": 4,
+            },
+            "body": body_tree,
+            "footer": footer or {"label": "TREE", "attribution_template": ""},
+        },
+    }
+
+
 def test_render_produces_correct_size_image():
     mode_def = _make_mode_def([
         {"type": "centered_text", "field": "text", "font_size": 16, "vertical_center": True}
@@ -139,6 +163,34 @@ def test_render_list_with_strings():
     assert img.size == (SCREEN_W, SCREEN_H)
 
 
+def test_render_list_wraps_to_multiple_lines():
+    mode_def = _make_mode_def([
+        {"type": "spacer", "height": 14},
+        {
+            "type": "list",
+            "field": "items",
+            "max_items": 1,
+            "item_template": "{title}",
+            "font_size": 14,
+            "item_spacing": 18,
+            "margin_x": 24,
+        },
+    ])
+    content = {
+        "items": [
+            {
+                "title": "This is a very long Hacker News headline that should wrap onto a second line in the list renderer"
+            }
+        ]
+    }
+    img = render_json_mode(
+        mode_def, content,
+        date_str="2月18日", weather_str="晴", battery_pct=80,
+    ).convert("L")
+    second_line_band = img.crop((24, 32, SCREEN_W - 24, 52))
+    assert min(second_line_band.getdata()) < 255
+
+
 def test_render_section_with_icon():
     mode_def = _make_mode_def([
         {"type": "spacer", "height": 14},
@@ -239,6 +291,96 @@ def test_render_with_footer_template():
         date_str="2月18日", weather_str="晴", battery_pct=80,
     )
     assert img.size == (SCREEN_W, SCREEN_H)
+
+
+def test_component_tree_layout_renders():
+    mode_def = _make_component_tree_mode_def(
+        {
+            "type": "column",
+            "padding_x": 18,
+            "padding_y": 8,
+            "gap": 10,
+            "children": [
+                {
+                    "type": "section_box",
+                    "title": "头条",
+                    "icon": "global",
+                    "children": [
+                        {
+                            "type": "repeat",
+                            "field": "items",
+                            "limit": 2,
+                            "gap": 6,
+                            "item": {
+                                "type": "row",
+                                "gap": 8,
+                                "align": "end",
+                                "children": [
+                                    {"type": "text", "field": "title", "grow": 1, "max_lines": 2},
+                                    {"type": "text", "field": "score", "font": "inter_medium", "font_size": 11, "align": "right"},
+                                ],
+                            },
+                        }
+                    ],
+                }
+            ],
+        }
+    )
+    content = {
+        "items": [
+            {"title": "Long title that should wrap across lines in the new layout engine", "score": 120},
+            {"title": "Second item", "score": 98},
+        ]
+    }
+    img = render_json_mode(
+        mode_def, content,
+        date_str="2月18日", weather_str="晴", battery_pct=80,
+    )
+    assert img.size == (SCREEN_W, SCREEN_H)
+
+
+def test_component_tree_repeat_wraps_text():
+    mode_def = _make_component_tree_mode_def(
+        {
+            "type": "column",
+            "padding_x": 18,
+            "padding_y": 8,
+            "children": [
+                {
+                    "type": "section_box",
+                    "title": "HN",
+                    "icon": "global",
+                    "children": [
+                        {
+                            "type": "repeat",
+                            "field": "items",
+                            "limit": 1,
+                            "item": {
+                                "type": "row",
+                                "gap": 8,
+                                "align": "end",
+                                "children": [
+                                    {"type": "text", "field": "title", "grow": 1, "max_lines": 2},
+                                    {"type": "text", "field": "score", "align": "right", "max_lines": 1},
+                                ],
+                            },
+                        }
+                    ],
+                }
+            ],
+        }
+    )
+    content = {
+        "items": [
+            {"title": "This is a very long story title that should wrap inside the component tree layout row", "score": 321}
+        ]
+    }
+    img = render_json_mode(
+        mode_def, content,
+        date_str="2月18日", weather_str="晴", battery_pct=80,
+    ).convert("L")
+    second_line_band = img.crop((54, 52, SCREEN_W - 60, 76))
+    assert min(second_line_band.getdata()) < 255
 
 
 def test_render_image_block_preserves_palette_colors():
@@ -371,6 +513,34 @@ def test_render_poetry_json():
     img = render_json_mode(
         mode_def, content,
         date_str="2月18日 周二", weather_str="晴", battery_pct=90,
+    )
+    assert img.size == (SCREEN_W, SCREEN_H)
+
+
+def test_render_briefing_component_tree_json():
+    briefing_path = os.path.join(
+        os.path.dirname(__file__), "..", "core", "modes", "builtin", "briefing.json"
+    )
+    with open(briefing_path, "r", encoding="utf-8") as f:
+        mode_def = json.load(f)
+
+    content = {
+        "hn_items": [
+            {"title": "Project Glasswing: Securing critical software for the AI era", "score": 1120},
+            {"title": "Lunar Flyby", "score": 573},
+        ],
+        "ph_item": {"name": "Netflix Playground", "tagline": "A world for kids to explore"},
+        "ph_name": "Netflix Playground",
+        "ph_tagline": "A world for kids to explore along their favorite characters",
+        "devto_items": [
+            {"title": "Component-based CSS"}
+        ],
+        "devto_title": "Component-based CSS",
+    }
+    img = render_json_mode(
+        mode_def, content,
+        date_str="4月8日 周三", weather_str="21°C", battery_pct=33,
+        time_str="4月8日 4时",
     )
     assert img.size == (SCREEN_W, SCREEN_H)
 

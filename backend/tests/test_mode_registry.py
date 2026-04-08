@@ -88,6 +88,24 @@ def test_validate_static_mode():
     assert _validate_mode_def(static_def) is True
 
 
+def test_validate_component_tree_mode():
+    component_tree_def = {
+        "mode_id": "TREE_TEST",
+        "display_name": "Tree Test",
+        "content": {"type": "static", "static_data": {"msg": "hello"}},
+        "layout": {
+            "layout_engine": "component_tree",
+            "body": {
+                "type": "column",
+                "children": [
+                    {"type": "text", "field": "msg"}
+                ],
+            },
+        },
+    }
+    assert _validate_mode_def(component_tree_def) is True
+
+
 def test_registry_register_and_query():
     reg = ModeRegistry()
 

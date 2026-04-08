@@ -401,8 +401,13 @@ def _validate_mode_def(definition: dict) -> bool:
     if not isinstance(layout, dict):
         return False
     body = layout.get("body")
-    if not isinstance(body, list) or len(body) == 0:
-        return False
+    layout_engine = layout.get("layout_engine")
+    if layout_engine == "component_tree":
+        if not isinstance(body, dict) or not body.get("type"):
+            return False
+    else:
+        if not isinstance(body, list) or len(body) == 0:
+            return False
 
     # Validate optional layout_overrides
     overrides = definition.get("layout_overrides")

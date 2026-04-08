@@ -4,6 +4,7 @@
 """
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import logging
@@ -16,6 +17,9 @@ from urllib.parse import urlparse
 import os
 
 import httpx
+from alibabacloud_alimt20181012 import models as alimt_models
+from alibabacloud_alimt20181012.client import Client as AlimtClient
+from alibabacloud_tea_openapi import models as open_api_models
 from httpx import HTTPStatusError
 from openai import OpenAIError
 
@@ -38,6 +42,7 @@ DEDUP_MAX_RETRIES = 2
 
 _BACKEND_ROOT = Path(__file__).resolve().parent.parent
 _UPLOAD_DIR = _BACKEND_ROOT / "runtime_uploads"
+_ALIYUN_MT_ENDPOINT = os.environ.get("ALIYUN_MT_ENDPOINT", "mt.cn-hangzhou.aliyuncs.com").strip()
 
 
 def _resolve_uploaded_image_bytes(url: str) -> bytes | None:
@@ -63,15 +68,118 @@ def _resolve_uploaded_image_bytes(url: str) -> bytes | None:
     except OSError:
         return None
 
-def _collect_image_fields(blocks: list, fields: set):
-    """Recursively collect image field names from layout blocks."""
-    for block in blocks:
+
+def _has_cjk_text(text: str) -> bool:
+    return any("\u4e00" <= ch <= "\u9fff" for ch in str(text or ""))
+
+
+def _make_aliyun_mt_client() -> AlimtClient | None:
+    access_key_id = os.environ.get("ALIBABA_CLOUD_ACCESS_KEY_ID", "").strip()
+    access_key_secret = os.environ.get("ALIBABA_CLOUD_ACCESS_KEY_SECRET", "").strip()
+    if not access_key_id or not access_key_secret:
+        return None
+    config = open_api_models.Config(
+        access_key_id=access_key_id,
+        access_key_secret=access_key_secret,
+        endpoint=_ALIYUN_MT_ENDPOINT,
+    )
+    return AlimtClient(config)
+
+
+def _translate_texts_with_aliyun_sync(texts: list[str]) -> list[str] | None:
+    client = _make_aliyun_mt_client()
+    if client is None:
+        return None
+    translated: list[str] = []
+    try:
+        for text in texts:
+            request = alimt_models.TranslateGeneralRequest(
+                source_language="en",
+                target_language="zh",
+                format_type="text",
+                scene="general",
+                source_text=text,
+            )
+            response = client.translate_general(request)
+            body = getattr(response, "body", None)
+            data = getattr(body, "data", None)
+            translated_text = getattr(data, "translated", "") if data is not None else ""
+            translated_text = str(translated_text or "").strip()
+            if not translated_text:
+                return None
+            translated.append(translated_text)
+        return translated
+    except Exception as e:
+        logger.warning("[JSONContent] Aliyun translation error: %s", e)
+        return None
+
+
+async def _translate_with_aliyun_mt(texts: list[str]) -> list[str] | None:
+    if not texts:
+        return []
+    return await asyncio.to_thread(_translate_texts_with_aliyun_sync, texts)
+
+
+async def _translate_briefing_result(result: dict, language: str) -> dict:
+    if language != "zh":
+        return result
+    targets: list[tuple[str, int | None, str]] = []
+    texts: list[str] = []
+    hn_items = result.get("hn_items")
+    if isinstance(hn_items, list):
+        for idx, item in enumerate(hn_items):
+            if not isinstance(item, dict):
+                continue
+            title = str(item.get("title", "")).strip()
+            if title and not _has_cjk_text(title):
+                targets.append(("hn_items", idx, "title"))
+                texts.append(title)
+    devto_items = result.get("devto_items")
+    if isinstance(devto_items, list):
+        for idx, item in enumerate(devto_items):
+            if not isinstance(item, dict):
+                continue
+            title = str(item.get("title", "")).strip()
+            if title and not _has_cjk_text(title):
+                targets.append(("devto_items", idx, "title"))
+                texts.append(title)
+    ph_tagline = str(result.get("ph_tagline", "")).strip()
+    if ph_tagline and not _has_cjk_text(ph_tagline):
+        targets.append(("root", None, "ph_tagline"))
+        texts.append(ph_tagline)
+    if not texts:
+        return result
+    translated = await _translate_with_aliyun_mt(texts)
+    if not translated:
+        return result
+    for (container, idx, field_name), text in zip(targets, translated):
+        if container == "root":
+            result[field_name] = text
+            continue
+        items = result.get(container)
+        if isinstance(items, list) and idx is not None and 0 <= idx < len(items) and isinstance(items[idx], dict):
+            items[idx][field_name] = text
+    if isinstance(result.get("devto_items"), list) and result["devto_items"]:
+        first = result["devto_items"][0]
+        if isinstance(first, dict):
+            result["devto_title"] = str(first.get("title", result.get("devto_title", "")))
+    return result
+
+def _collect_image_fields(blocks: Any, fields: set):
+    """Recursively collect image field names from legacy blocks or component trees."""
+    if isinstance(blocks, dict):
+        block = blocks
         if block.get("type") == "image":
             fields.add(block.get("field", "image_url"))
-        for child_key in ("children", "left", "right"):
-            children = block.get(child_key, [])
-            if isinstance(children, list):
+        for child_key in ("children", "left", "right", "item"):
+            children = block.get(child_key)
+            if isinstance(children, (list, dict)):
                 _collect_image_fields(children, fields)
+        return
+    if isinstance(blocks, list):
+        for block in blocks:
+            if isinstance(block, (list, dict)):
+                _collect_image_fields(block, fields)
 
 
 async def _prefetch_images(content: dict, mode_def: dict) -> dict:
@@ -176,7 +284,7 @@ async def generate_json_mode_content(
     - static: returns static_data from the definition
     - llm: calls LLM with prompt template, parses output per output_format
     - llm_json: calls LLM, parses JSON response using output_schema
-    - external_data: fetches data from built-in providers (HN/PH/V2EX)
+    - external_data: fetches data from built-in providers (HN/PH/Dev.to)
     - image_gen: generates image data payload (ARTWALL provider)
     - computed: computes content from config/date without LLM
     - composite: merges results from multiple nested content steps
@@ -862,9 +970,7 @@ async def _generate_external_data_content(mode_def: dict, content_cfg: dict, fal
     from .content import (
         fetch_hn_top_stories,
         fetch_ph_top_product,
-        fetch_v2ex_hot,
-        summarize_briefing_content,
-        generate_briefing_insight,
+        fetch_devto_top,
     )
 
     provider = content_cfg.get("provider", "")
@@ -876,69 +982,43 @@ async def _generate_external_data_content(mode_def: dict, content_cfg: dict, fal
 
     if provider == "briefing":
         hn_limit = int(content_cfg.get("hn_limit", 2))
-        v2ex_limit = int(content_cfg.get("v2ex_limit", 1))
-        summarize = bool(content_cfg.get("summarize", True))
-        include_insight = bool(content_cfg.get("include_insight", True))
+        devto_limit = int(content_cfg.get("devto_limit", 1))
+        devto_fallback_title = "Dev.to unavailable" if language == "en" else "Dev.to 暂无数据"
 
         import asyncio as _asyncio
-        hn_items, ph_item, v2ex_items = await _asyncio.gather(
+        hn_items, ph_item, devto_items = await _asyncio.gather(
             fetch_hn_top_stories(limit=hn_limit),
             fetch_ph_top_product(),
-            fetch_v2ex_hot(limit=v2ex_limit),
+            fetch_devto_top(limit=devto_limit),
         )
-        if not hn_items and not ph_item and not v2ex_items:
+        if not hn_items and not ph_item and not devto_items:
             fb = dict(fallback)
             fb["_is_fallback"] = True
             fb["_used_fallback"] = True
             fb["_llm_used"] = False
             fb["_llm_ok"] = False
             return fb
-        
-        llm_failed = False
-        if summarize:
-            summarized_hn, summarized_ph = await summarize_briefing_content(
-                hn_items, ph_item, llm_provider, llm_model, api_key=api_key, llm_base_url=llm_base_url, language=language
-            )
-            # 如果返回 None，说明 summarize 失败了
-            if summarized_hn is None or summarized_ph is None:
-                llm_failed = True
-            else:
-                hn_items = summarized_hn
-                ph_item = summarized_ph
-        
-        insight = ""
-        if include_insight:
-            insight = await generate_briefing_insight(hn_items, ph_item, llm_provider, llm_model, api_key=api_key, llm_base_url=llm_base_url, language=language)
-            # 如果返回 None，说明 insight 生成失败了
-            if insight is None:
-                llm_failed = True
-                insight = ""
-        
+
         result = dict(fallback)
         ph_name = ""
         ph_tagline = ""
         if isinstance(ph_item, dict):
             ph_name = str(ph_item.get("name", ""))
             ph_tagline = str(ph_item.get("tagline", ""))
+        devto_title = ""
+        if isinstance(devto_items, list) and devto_items:
+            devto_title = str(devto_items[0].get("title", ""))
         result.update({
             "hn_items": hn_items or result.get("hn_items", []),
             "ph_item": ph_item or result.get("ph_item", {}),
-            "v2ex_items": v2ex_items or result.get("v2ex_items", []),
-            "insight": insight or result.get("insight", ""),
+            "devto_items": devto_items or [{"title": devto_fallback_title}],
             "ph_name": ph_name,
             "ph_tagline": ph_tagline,
+            "devto_title": devto_title or devto_fallback_title,
         })
-        
-        # 标记 LLM 使用情况
-        if summarize or include_insight:
-            result["_llm_used"] = True
-            if llm_failed:
-                result["_llm_ok"] = False
-                result["_used_fallback"] = True
-                logger.warning(f"[JSONContent] BRIEFING LLM calls failed, marked as fallback")
-            else:
-                result["_llm_ok"] = True
-        
+        result = await _translate_briefing_result(result, language)
+        result["_llm_used"] = False
+        result["_llm_ok"] = False
         return result
 
     if provider == "weather_forecast":

@@ -26,8 +26,6 @@ async def main():
 
     content = await generate_json_mode_content(
         mode_def,
-        llm_provider="deepseek",
-        llm_model="deepseek-chat",
     )
     
     print(f"\nGenerated content:")
@@ -35,18 +33,15 @@ async def main():
     for i, item in enumerate(content['hn_items'], 1):
         print(f"\n{i}. {item.get('title', '')}")
         print(f"   Score: {item.get('score', 0)} pts")
-        if item.get('summary'):
-            print(f"   Summary: {item.get('summary')}")
-    
     print(f"\n=== PH item ===")
     print(f"Name: {content['ph_item'].get('name', 'N/A')}")
-    if content['ph_item'].get('tagline_original'):
-        print(f"Tagline (Original): {content['ph_item'].get('tagline_original')}")
     if content['ph_item'].get('tagline'):
-        print(f"Tagline (Summary): {content['ph_item'].get('tagline')}")
+        print(f"Tagline: {content['ph_item'].get('tagline')}")
     
-    print(f"\n=== AI Insight ===")
-    print(content['insight'])
+    print(f"\n=== Dev.to ===")
+    for i, item in enumerate(content['devto_items'], 1):
+        print(f"\n{i}. {item.get('title', '')}")
+        print(f"   Score: {item.get('score', 0)} pts")
     
     img = render_json_mode(
         mode_def,
