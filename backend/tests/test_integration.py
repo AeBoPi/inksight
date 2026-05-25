@@ -1155,16 +1155,24 @@ async def test_custom_modes_end_to_end(client, monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_backend_root_page_points_to_primary_webapp(client):
+    resp = await client.get("/")
+    assert resp.status_code == 200
+    assert "InkSight Console" in resp.text
+    assert "ADMIN_TOKEN" in resp.text
+    assert "/api/admin/console/summary" in resp.text
+
+
+@pytest.mark.asyncio
 async def test_config_page_bridge_and_legacy_page(client):
     bridge_resp = await client.get("/config")
     assert bridge_resp.status_code == 200
     assert "Device configuration moved to the web app." in bridge_resp.text
-    assert "/legacy/config" in bridge_resp.text
+    assert "Legacy webconfig HTML has been retired." in bridge_resp.text
 
     legacy_resp = await client.get("/legacy/config")
-    assert legacy_resp.status_code == 200
-    assert "legacy-console-banner" not in legacy_resp.text
-    assert "/webconfig/role-banner.js" in legacy_resp.text
+    assert legacy_resp.status_code == 410
+    assert "Device configuration moved to the primary web app." in legacy_resp.text
 
 
 @pytest.mark.asyncio
@@ -1173,6 +1181,75 @@ async def test_config_page_redirects_to_primary_webapp_when_configured(client, m
     resp = await client.get("/config", params={"mac": "AA:BB:CC:DD:EE:FF"})
     assert resp.status_code == 307
     assert resp.headers["location"] == "https://app.example.com/config?mac=AA:BB:CC:DD:EE:FF"
+
+
+@pytest.mark.asyncio
+async def test_legacy_preview_dashboard_and_editor_redirect_to_primary_webapp(client):
+    preview_resp = await client.get("/preview", follow_redirects=False)
+    assert preview_resp.status_code == 410
+    assert "Preview moved to the primary web app." in preview_resp.text
+
+    dashboard_resp = await client.get("/dashboard", follow_redirects=False)
+    assert dashboard_resp.status_code == 410
+    assert "Dashboard moved to the primary web app." in dashboard_resp.text
+
+    editor_resp = await client.get("/editor", follow_redirects=False)
+    assert editor_resp.status_code == 410
+    assert "Mode editor moved to the primary web app." in editor_resp.text
+
+
+@pytest.mark.asyncio
+async def test_legacy_preview_dashboard_and_editor_redirect_when_primary_webapp_configured(client, monkeypatch):
+    monkeypatch.setenv("INKSIGHT_PRIMARY_WEBAPP_URL", "http://localhost:3000")
+
+    preview_resp = await client.get("/preview", follow_redirects=False)
+    assert preview_resp.status_code == 307
+    assert preview_resp.headers["location"] == "http://localhost:3000/preview"
+
+    dashboard_resp = await client.get("/dashboard", follow_redirects=False)
+    assert dashboard_resp.status_code == 307
+    assert dashboard_resp.headers["location"] == "http://localhost:3000/config"
+
+    editor_resp = await client.get("/editor", follow_redirects=False)
+    assert editor_resp.status_code == 307
+    assert editor_resp.headers["location"] == "http://localhost:3000/config"
+
+
+@pytest.mark.asyncio
+async def test_static_art_assets_and_legacy_webconfig_art_paths(client):
+    static_resp = await client.get("/static/art/moyun.png")
+    assert static_resp.status_code == 200
+    assert static_resp.headers["content-type"] == "image/png"
+
+    legacy_resp = await client.get("/webconfig/assets/art/moyun.png")
+    assert legacy_resp.status_code == 200
+    assert legacy_resp.headers["content-type"] == "image/png"
+
+
+@pytest.mark.asyncio
+async def test_analytics_pageview_and_admin_console_summary(client, monkeypatch):
+    monkeypatch.setenv("ADMIN_TOKEN", "test-admin")
+
+    pageview_resp = await client.post(
+        "/api/analytics/pageview",
+        json={"path": "/config?mac=AA:BB:CC:DD:EE:FF", "source": "test"},
+        headers={"user-agent": "pytest", "x-forwarded-for": "203.0.113.10"},
+    )
+    assert pageview_resp.status_code == 200
+    assert pageview_resp.json()["ok"] is True
+
+    forbidden = await client.get("/api/admin/console/summary")
+    assert forbidden.status_code == 403
+
+    summary = await client.get(
+        "/api/admin/console/summary",
+        headers={"Authorization": "Bearer test-admin"},
+    )
+    assert summary.status_code == 200
+    payload = summary.json()
+    assert payload["visits"]["total"] == 1
+    assert payload["visits"]["today"] == 1
+    assert payload["visits"]["top_paths_7d"][0]["path"] == "/config?mac=AA:BB:CC:DD:EE:FF"
 
 
 # ---------------------------------------------------------------------------

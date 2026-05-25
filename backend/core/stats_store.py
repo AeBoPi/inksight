@@ -9,7 +9,7 @@ import json
 import os
 import logging
 import aiosqlite
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any, Optional, Union
 
 logger = logging.getLogger(__name__)
@@ -66,12 +66,30 @@ async def init_stats_db():
                 UNIQUE(mac, habit_name, date)
             )
         """)
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS site_visits (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                path TEXT NOT NULL,
+                method TEXT DEFAULT 'GET',
+                host TEXT DEFAULT '',
+                referrer TEXT DEFAULT '',
+                user_agent TEXT DEFAULT '',
+                ip_hash TEXT DEFAULT '',
+                user_id INTEGER,
+                mac TEXT DEFAULT '',
+                source TEXT DEFAULT 'web',
+                created_at TEXT NOT NULL
+            )
+        """)
         await db.execute("CREATE INDEX IF NOT EXISTS idx_render_logs_mac ON render_logs(mac)")
         await db.execute("CREATE INDEX IF NOT EXISTS idx_render_logs_created ON render_logs(created_at)")
         await db.execute("CREATE INDEX IF NOT EXISTS idx_heartbeats_mac ON device_heartbeats(mac)")
         await db.execute("CREATE INDEX IF NOT EXISTS idx_content_history_mac ON content_history(mac)")
         await db.execute("CREATE INDEX IF NOT EXISTS idx_content_history_hash ON content_history(mac, mode_id, content_hash)")
         await db.execute("CREATE INDEX IF NOT EXISTS idx_habit_mac ON habit_records(mac)")
+        await db.execute("CREATE INDEX IF NOT EXISTS idx_site_visits_created ON site_visits(created_at)")
+        await db.execute("CREATE INDEX IF NOT EXISTS idx_site_visits_path ON site_visits(path)")
+        await db.execute("CREATE INDEX IF NOT EXISTS idx_site_visits_user ON site_visits(user_id)")
         # Migration: add is_fallback column if missing (for existing databases)
         try:
             await db.execute("ALTER TABLE render_logs ADD COLUMN is_fallback INTEGER DEFAULT 0")
@@ -114,6 +132,54 @@ async def log_heartbeat(mac: str, battery_voltage: float, wifi_rssi: Optional[in
                ORDER BY created_at DESC LIMIT 1000
            )""",
         (mac, mac),
+    )
+    await db.commit()
+
+
+def _hash_ip(value: str) -> str:
+    salt = os.environ.get("INKSIGHT_ANALYTICS_SALT", "inksight")
+    raw = f"{salt}:{value or ''}".encode("utf-8", errors="ignore")
+    return hashlib.sha256(raw).hexdigest()[:16]
+
+
+async def log_site_visit(
+    *,
+    path: str,
+    method: str = "GET",
+    host: str = "",
+    referrer: str = "",
+    user_agent: str = "",
+    ip: str = "",
+    user_id: Optional[int] = None,
+    mac: str = "",
+    source: str = "web",
+) -> None:
+    """Record a lightweight pageview event.
+
+    Historical pageview counts only exist after this table starts receiving events.
+    Older website visits need to be backfilled from reverse-proxy / CDN logs.
+    """
+    safe_path = (path or "/").strip()[:500] or "/"
+    now = datetime.now().isoformat()
+    db = await get_main_db()
+    await db.execute(
+        """
+        INSERT INTO site_visits
+            (path, method, host, referrer, user_agent, ip_hash, user_id, mac, source, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            safe_path,
+            (method or "GET").strip().upper()[:16],
+            (host or "").strip()[:255],
+            (referrer or "").strip()[:500],
+            (user_agent or "").strip()[:500],
+            _hash_ip(ip),
+            user_id,
+            (mac or "").strip().upper()[:17],
+            (source or "web").strip()[:50],
+            now,
+        ),
     )
     await db.commit()
 
@@ -281,6 +347,139 @@ async def get_stats_overview() -> dict:
         "cache_hit_rate": cache_hit_rate,
         "mode_frequency": mode_frequency,
         "devices": devices,
+    }
+
+
+async def get_admin_console_summary() -> dict:
+    """Return operational metrics for the backend console."""
+    db = await get_main_db()
+    now = datetime.now()
+    today = now.strftime("%Y-%m-%d")
+    day_ago = (now - timedelta(days=1)).isoformat()
+    week_ago = (now - timedelta(days=7)).isoformat()
+
+    async def scalar(sql: str, params: tuple = ()) -> int | float:
+        cursor = await db.execute(sql, params)
+        row = await cursor.fetchone()
+        return row[0] if row and row[0] is not None else 0
+
+    total_users = await scalar("SELECT COUNT(*) FROM users")
+    today_users = await scalar("SELECT COUNT(*) FROM users WHERE DATE(created_at) = ?", (today,))
+    total_bound_devices = await scalar(
+        """
+        SELECT COUNT(DISTINCT mac) FROM (
+            SELECT mac FROM device_state
+            UNION SELECT mac FROM configs
+            UNION SELECT mac FROM user_devices
+            UNION SELECT mac FROM device_memberships
+        )
+        """
+    )
+    total_renders = await scalar("SELECT COUNT(*) FROM render_logs")
+    today_renders = await scalar("SELECT COUNT(*) FROM render_logs WHERE DATE(created_at) = ?", (today,))
+    total_visits = await scalar("SELECT COUNT(*) FROM site_visits")
+    today_visits = await scalar("SELECT COUNT(*) FROM site_visits WHERE DATE(created_at) = ?", (today,))
+    unique_visitors_today = await scalar(
+        "SELECT COUNT(DISTINCT ip_hash) FROM site_visits WHERE DATE(created_at) = ? AND ip_hash != ''",
+        (today,),
+    )
+    active_users_24h = await scalar(
+        "SELECT COUNT(DISTINCT user_id) FROM site_visits WHERE user_id IS NOT NULL AND created_at >= ?",
+        (day_ago,),
+    )
+    active_users_7d = await scalar(
+        "SELECT COUNT(DISTINCT user_id) FROM site_visits WHERE user_id IS NOT NULL AND created_at >= ?",
+        (week_ago,),
+    )
+    active_devices_24h = await scalar(
+        """
+        SELECT COUNT(DISTINCT mac) FROM (
+            SELECT mac FROM render_logs WHERE created_at >= ?
+            UNION SELECT mac FROM device_heartbeats WHERE created_at >= ?
+            UNION SELECT mac FROM device_state WHERE last_state_poll_at >= ?
+        )
+        """,
+        (day_ago, day_ago, day_ago),
+    )
+    active_devices_7d = await scalar(
+        """
+        SELECT COUNT(DISTINCT mac) FROM (
+            SELECT mac FROM render_logs WHERE created_at >= ?
+            UNION SELECT mac FROM device_heartbeats WHERE created_at >= ?
+            UNION SELECT mac FROM device_state WHERE last_state_poll_at >= ?
+        )
+        """,
+        (week_ago, week_ago, week_ago),
+    )
+
+    cursor = await db.execute(
+        """
+        SELECT DATE(created_at) AS day, COUNT(*) AS count, COUNT(DISTINCT ip_hash) AS unique_visitors
+        FROM site_visits
+        GROUP BY day
+        ORDER BY day DESC
+        LIMIT 30
+        """
+    )
+    daily_visits = [
+        {"date": row[0], "count": row[1], "unique_visitors": row[2]}
+        for row in await cursor.fetchall()
+    ]
+    daily_visits.reverse()
+
+    cursor = await db.execute(
+        """
+        SELECT path, COUNT(*) AS count
+        FROM site_visits
+        WHERE created_at >= ?
+        GROUP BY path
+        ORDER BY count DESC
+        LIMIT 10
+        """,
+        (week_ago,),
+    )
+    top_paths = [{"path": row[0], "count": row[1]} for row in await cursor.fetchall()]
+
+    cursor = await db.execute(
+        """
+        SELECT mac, MAX(last_seen) AS last_seen FROM (
+            SELECT mac, created_at AS last_seen FROM render_logs
+            UNION ALL SELECT mac, created_at AS last_seen FROM device_heartbeats
+            UNION ALL SELECT mac, last_state_poll_at AS last_seen FROM device_state WHERE last_state_poll_at != ''
+        )
+        GROUP BY mac
+        ORDER BY last_seen DESC
+        LIMIT 12
+        """
+    )
+    recent_devices = [{"mac": row[0], "last_seen": row[1]} for row in await cursor.fetchall()]
+
+    return {
+        "generated_at": now.isoformat(),
+        "users": {
+            "total": int(total_users),
+            "today": int(today_users),
+            "active_24h": int(active_users_24h),
+            "active_7d": int(active_users_7d),
+        },
+        "devices": {
+            "total": int(total_bound_devices),
+            "active_24h": int(active_devices_24h),
+            "active_7d": int(active_devices_7d),
+            "recent": recent_devices,
+        },
+        "renders": {
+            "total": int(total_renders),
+            "today": int(today_renders),
+        },
+        "visits": {
+            "total": int(total_visits),
+            "today": int(today_visits),
+            "unique_today": int(unique_visitors_today),
+            "daily": daily_visits,
+            "top_paths_7d": top_paths,
+            "history_note": "Pageview history starts when site_visits tracking is enabled. Older data requires access-log import.",
+        },
     }
 
 
